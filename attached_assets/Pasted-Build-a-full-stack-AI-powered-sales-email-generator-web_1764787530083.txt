@@ -1,0 +1,190 @@
+Build a full-stack AI-powered sales email generator web app that works like a lightweight HubSpot / ZoomInfo Copilot for Basho-style outreach.
+
+## High-level behavior
+
+- The app lets a user:
+  - Paste a single prospect email + LinkedIn URL, OR
+  - Upload a CSV of many prospects (name, title, company, email, LinkedIn URL, optional notes)
+- For each prospect, the app:
+  - Fetches/scrapes the LinkedIn profile URL (or searches LinkedIn by name + company if URL is missing) to collect:
+    - Current role and company
+    - Recent activity signals (job changes, promotions, funding news, product launches, tech stack mentions)
+    - Industry and company size
+  - Uses an AI model (call OpenAI API placeholder) to generate a ZoomInfo-style Basho email:
+    - Clear subject line
+    - Personalized trigger hook referencing something specific from LinkedIn/company
+    - 2–3 sentence Consequence of Inaction (COI) statement
+    - 1–2 sentence value proposition tailored to their role
+    - Specific CTA with 2–3 time options
+- The user can:
+  - Preview/edit the generated emails in a clean UI
+  - Select one or many rows and click “Send”
+  - On send, the backend uses a dummy email provider function (abstracted email service) that can later be wired to real SMTP/SendGrid
+
+## Tech stack
+
+- Frontend:
+  - React (TypeScript) with a modern component-based architecture
+  - Routing with React Router (single-page app feel)
+  - State management with React Query or simple Context where appropriate
+- Backend:
+  - Node.js + Express (TypeScript)
+  - REST API endpoints for:
+    - `/api/generate-email` (single prospect)
+    - `/api/generate-batch` (CSV batch)
+    - `/api/send-email` (single or batch)
+- CSV handling:
+  - Support CSV upload on the frontend
+  - Parse on the frontend and send JSON to backend, or upload to backend and parse there using a library like `papaparse` or `csv-parser`
+- AI integration:
+  - Create a service layer that calls an OpenAI-style completion/chat API (use environment variable for API key)
+  - Centralize the Basho prompt template in one file
+- LinkedIn enrichment:
+  - Create a `linkedinService.ts` with functions that:
+    - Given `linkedinUrl`, return mock structured data
+    - Given `name + company`, return mock structured data
+  - Implement this as placeholder/mock functions (no real scraping), but design the types and flow so real enrichment logic can be plugged in later
+
+## Core user flows
+
+1. **Single email flow**
+   - Landing page with two main options:
+     - “Generate 1:1 Email”
+     - “Bulk Campaign via CSV”
+   - For “Generate 1:1 Email”:
+     - Simple form with:
+       - Prospect name
+       - Company
+       - Title
+       - Email
+       - LinkedIn URL
+       - Optional “notes/context” textarea
+     - Button: “Generate Basho Email”
+     - Show loading state
+     - Display result in a rich text area / code-like block:
+       - Subject line
+       - Email body
+     - Buttons:
+       - “Regenerate” (same inputs, new variation)
+       - “Copy to Clipboard”
+       - “Send Email” (calls `/api/send-email` with that payload)
+
+2. **CSV bulk flow**
+   - Page to upload CSV:
+     - Drag-and-drop zone + “Browse file” button
+     - Small helper text listing required headers: `first_name, last_name, title, company, email, linkedin_url, notes`
+   - After upload, display a table:
+     - Columns: Name, Title, Company, Email, LinkedIn URL, Status, Preview
+     - Status states: “Pending”, “Generating…”, “Ready”, “Sent”, “Error”
+   - When user clicks “Generate for All”:
+     - Send parsed rows to `/api/generate-batch`
+     - Backend processes concurrently (Promise.allSettled or a simple queue) and returns generated emails
+     - Update each row with:
+       - A compact preview (first 1–2 lines)
+       - “View / Edit” button that opens a modal with the full email and editable textarea
+   - At top-right, show:
+     - “Select All” checkbox
+     - “Send Selected” button
+   - On send:
+     - Call `/api/send-email` with the selected IDs/payloads
+     - Update status to “Sent” or “Error” per row
+
+## Basho email prompt logic
+
+In the backend, create a function like `buildBashoPrompt(prospect, linkedinData, companySignals)` that generates a system + user prompt for the LLM. The AI should:
+
+- Use ZoomInfo-style Basho best practices:
+  - Lead with an ultra-specific trigger from LinkedIn or company news
+  - Describe the pain/COI in the prospect’s own context (role, team, industry)
+  - Only then mention the solution/value proposition
+  - Close with a clear, specific CTA with 2–3 time slots
+- Accept tuning parameters:
+  - `tone`: `"casual" | "professional" | "hyper-personal"`
+  - `length`: `"short" | "medium"`
+- Return structured JSON:
+  - `{ subject: string; body: string; }`
+
+Use a mock LLM implementation initially but structure the code so a real AI provider call can be dropped in easily.
+
+## UI / UX requirements
+
+- Overall vibe:
+  - Clean, modern, SaaS-like dashboard UI
+  - Primary colors:
+    - Background: #000000 or near-black
+    - Foreground text: #FFFFFF
+    - Accent color: a single, subtle highlight (e.g., #00D1FF or another single accent that can be changed in a theme file)
+  - High contrast, but not harsh; plenty of whitespace and padding
+- Layout:
+  - Left sidebar with app name and navigation:
+    - Logo text: “Basho Studio” (placeholder)
+    - Nav items: “Single Email”, “Bulk Campaigns”, “Settings”
+  - Top bar:
+    - Environment indicator (“Sandbox” badge)
+    - User avatar placeholder
+  - Main content cards:
+    - Rounded corners
+    - Soft drop shadows
+    - Use a max-width for main forms for readability
+- Components to design well:
+  - File upload card with progress / status
+  - Result table with chip-style badges for statuses
+  - Modal for editing a generated email, with:
+    - Subject input
+    - Body textarea
+    - “Save Changes”, “Regenerate”, “Cancel”
+  - Toast notifications for:
+    - “Emails generated successfully”
+    - “Email send failed”
+- Make it responsive and mobile-friendly:
+  - On small screens, stack the cards and table
+  - Hide non-critical columns behind a “Details” drawer
+
+## Code organization
+
+- Use a monorepo-like structure inside the repl if possible:
+  - `/frontend` for React app
+  - `/backend` for Express API
+- Or a single repo but clearly separated folders:
+  - `/src/frontend/*`
+  - `/src/backend/*`
+- Add clear README with:
+  - How to run the backend
+  - How to run the frontend
+  - How to configure `.env` for AI provider + email provider (mock keys)
+- Add placeholder environment variable usage:
+  - `AI_API_KEY`
+  - `EMAIL_PROVIDER_API_KEY`
+
+## Concurrency and performance
+
+- For `/api/generate-batch`:
+  - Implement concurrent generation with a configurable concurrency limit (e.g., 5–10 at a time)
+  - Use async/await and Promise pools so multiple prospects are processed in parallel
+- Clearly separate:
+  - Data enrichment (LinkedIn/company info)
+  - Prompt building
+  - LLM call
+  - Email send
+
+## Developer experience
+
+- Use TypeScript types for:
+  - `Prospect`
+  - `LinkedinProfile`
+  - `GeneratedEmail`
+- Include basic error handling and logging:
+  - Return helpful error messages to the frontend
+  - Surface per-row errors in the table
+
+Please generate:
+
+1. All frontend and backend code files
+2. A minimal but beautiful dark SaaS UI matching the brand requirements
+3. A seed example CSV file for testing
+4. Instructions in the README on how to:
+   - Run the app locally in Replit
+   - Plug in a real AI API key
+   - Plug in a real email provider later
+
+Aim for production-quality structure and clean, readable code so it’s easy to extend with real LinkedIn/ZoomInfo/Salesforce integrations later.
