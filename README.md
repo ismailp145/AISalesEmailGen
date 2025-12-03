@@ -207,7 +207,3 @@ The application requires one of the following AI configurations:
 2. Create a new application in Clerk dashboard
 3. Add `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` environment variables
 4. Wrap routes with `<ProtectedRoute>` component to enable authentication
-
-## License
-
-MIT
