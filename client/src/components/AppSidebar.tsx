@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Mail, Upload, Settings, Zap } from "lucide-react";
+import { Mail, Upload, User, Zap } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -23,9 +23,9 @@ const navItems = [
     icon: Upload,
   },
   {
-    title: "Settings",
+    title: "My Profile",
     url: "/settings",
-    icon: Settings,
+    icon: User,
   },
 ];
 
