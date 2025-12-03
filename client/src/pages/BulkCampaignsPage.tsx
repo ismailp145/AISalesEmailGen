@@ -1,19 +1,43 @@
 import { useState, useCallback } from "react";
 import { Sparkles, Send, Loader2, Download } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { FileDropzone } from "@/components/FileDropzone";
 import { ProspectTable, type Prospect } from "@/components/ProspectTable";
 import { EmailPreviewModal } from "@/components/EmailPreviewModal";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
-// todo: remove mock functionality - CSV parsing will use papaparse
 function parseCSV(content: string): Omit<Prospect, "id" | "status">[] {
   const lines = content.trim().split("\n");
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/"/g, ""));
   
-  return lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim());
+  return lines.slice(1).filter(line => line.trim()).map((line) => {
+    const values: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    
+    for (const char of line) {
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === "," && !inQuotes) {
+        values.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim());
+    
     const row: Record<string, string> = {};
     headers.forEach((h, i) => {
       row[h] = values[i] || "";
@@ -31,13 +55,16 @@ function parseCSV(content: string): Omit<Prospect, "id" | "status">[] {
   });
 }
 
+type Tone = "casual" | "professional" | "hyper-personal";
+type Length = "short" | "medium";
+
 export default function BulkCampaignsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [tone, setTone] = useState<Tone>("professional");
+  const [length, setLength] = useState<Length>("medium");
   const { toast } = useToast();
 
   const handleFileSelect = useCallback(async (file: File) => {
@@ -57,40 +84,74 @@ export default function BulkCampaignsPage() {
     });
   }, [toast]);
 
-  const handleGenerateAll = async () => {
-    setIsGenerating(true);
-    
-    // todo: remove mock functionality - replace with actual API call
-    for (let i = 0; i < prospects.length; i++) {
-      setProspects((prev) =>
-        prev.map((p, idx) =>
-          idx === i ? { ...p, status: "generating" as const } : p
-        )
-      );
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const pendingProspects = prospects.filter(p => p.status === "pending");
       
-      await new Promise((r) => setTimeout(r, 800));
+      setProspects(prev => prev.map(p => 
+        p.status === "pending" ? { ...p, status: "generating" as const } : p
+      ));
+
+      const response = await apiRequest("POST", "/api/generate-emails-bulk", {
+        prospects: pendingProspects.map(p => ({
+          firstName: p.firstName,
+          lastName: p.lastName,
+          company: p.company,
+          title: p.title,
+          email: p.email,
+          linkedinUrl: p.linkedinUrl,
+          notes: p.notes,
+        })),
+        tone,
+        length,
+      });
       
-      setProspects((prev) =>
-        prev.map((p, idx) =>
-          idx === i
-            ? {
-                ...p,
-                status: "ready" as const,
-                generatedEmail: {
-                  subject: `Quick question about ${p.company}'s growth`,
-                  body: `Hi ${p.firstName},\n\nNoticed you're the ${p.title} at ${p.company}. With rapid changes in your industry, I imagine optimizing your team's productivity is a top priority.\n\nWe help leaders like you achieve 40% better results through AI-powered outreach.\n\nWould you be open to a quick 15-minute call this week? I'm free Tuesday at 2pm or Thursday at 10am.\n\nBest,\nAlex`,
-                },
-              }
-            : p
-        )
-      );
-    }
-    
-    setIsGenerating(false);
-    toast({
-      title: "Complete",
-      description: `Generated ${prospects.length} emails.`,
-    });
+      return response.json() as Promise<Array<{
+        prospect: any;
+        email?: { subject: string; body: string };
+        error?: string;
+        status: string;
+      }>>;
+    },
+    onSuccess: (results) => {
+      setProspects(prev => {
+        const pendingIds = prev.filter(p => p.status === "generating").map(p => p.id);
+        return prev.map((p, idx) => {
+          const pendingIndex = pendingIds.indexOf(p.id);
+          if (pendingIndex === -1) return p;
+          
+          const result = results[pendingIndex];
+          if (!result) return p;
+          
+          return {
+            ...p,
+            status: result.email ? "ready" as const : "error" as const,
+            generatedEmail: result.email,
+            error: result.error,
+          };
+        });
+      });
+      
+      const successCount = results.filter(r => r.email).length;
+      toast({
+        title: "Complete",
+        description: `Generated ${successCount} of ${results.length} emails.`,
+      });
+    },
+    onError: (error: any) => {
+      setProspects(prev => prev.map(p => 
+        p.status === "generating" ? { ...p, status: "error" as const } : p
+      ));
+      toast({
+        title: "Generation failed",
+        description: error?.message || "Could not generate emails. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleGenerateAll = () => {
+    generateMutation.mutate();
   };
 
   const handleSendSelected = async () => {
@@ -116,23 +177,16 @@ export default function BulkCampaignsPage() {
       return;
     }
 
-    setIsSending(true);
+    setProspects(prev => prev.map(p => 
+      selectedIds.has(p.id) && p.status === "ready" 
+        ? { ...p, status: "sent" as const } 
+        : p
+    ));
     
-    // todo: remove mock functionality - replace with actual API call
-    for (const prospect of readyProspects) {
-      setProspects((prev) =>
-        prev.map((p) =>
-          p.id === prospect.id ? { ...p, status: "sent" as const } : p
-        )
-      );
-      await new Promise((r) => setTimeout(r, 300));
-    }
-    
-    setIsSending(false);
     setSelectedIds(new Set());
     toast({
-      title: "Sent",
-      description: `${readyProspects.length} emails delivered.`,
+      title: "Marked as sent",
+      description: `${readyProspects.length} emails marked as sent.`,
     });
   };
 
@@ -150,34 +204,56 @@ export default function BulkCampaignsPage() {
     );
   };
 
+  const regenerateMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedProspect) throw new Error("No prospect selected");
+      
+      const response = await apiRequest("POST", "/api/generate-email", {
+        prospect: {
+          firstName: selectedProspect.firstName,
+          lastName: selectedProspect.lastName,
+          company: selectedProspect.company,
+          title: selectedProspect.title,
+          email: selectedProspect.email,
+          linkedinUrl: selectedProspect.linkedinUrl,
+          notes: selectedProspect.notes,
+        },
+        tone,
+        length,
+      });
+      
+      return response.json() as Promise<{ subject: string; body: string }>;
+    },
+    onSuccess: (email) => {
+      if (!selectedProspect) return;
+      
+      setProspects(prev => prev.map(p => 
+        p.id === selectedProspect.id 
+          ? { ...p, status: "ready" as const, generatedEmail: email }
+          : p
+      ));
+      
+      setSelectedProspect(prev => 
+        prev ? { ...prev, generatedEmail: email } : null
+      );
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Regeneration failed",
+        description: error?.message || "Could not regenerate email.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleRegenerateEmail = async () => {
     if (!selectedProspect) return;
     
-    setProspects((prev) =>
-      prev.map((p) =>
-        p.id === selectedProspect.id ? { ...p, status: "generating" as const } : p
-      )
-    );
+    setProspects(prev => prev.map(p => 
+      p.id === selectedProspect.id ? { ...p, status: "generating" as const } : p
+    ));
     
-    // todo: remove mock functionality
-    await new Promise((r) => setTimeout(r, 1500));
-    
-    const newEmail = {
-      subject: `Following up on ${selectedProspect.company}'s initiatives`,
-      body: `Hi ${selectedProspect.firstName},\n\nI hope this finds you well! I recently came across ${selectedProspect.company}'s latest announcements and was impressed by your team's momentum.\n\nAs ${selectedProspect.title}, you're likely focused on scaling efficiently. Our platform helps teams achieve more with less effort.\n\nWould you have 15 minutes for a quick chat? I'm free Tuesday at 3pm or Wednesday at 11am.\n\nBest regards,\nAlex`,
-    };
-    
-    setProspects((prev) =>
-      prev.map((p) =>
-        p.id === selectedProspect.id
-          ? { ...p, status: "ready" as const, generatedEmail: newEmail }
-          : p
-      )
-    );
-    
-    setSelectedProspect((prev) =>
-      prev ? { ...prev, generatedEmail: newEmail } : null
-    );
+    regenerateMutation.mutate();
   };
 
   const downloadSampleCSV = () => {
@@ -195,10 +271,13 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
     URL.revokeObjectURL(url);
   };
 
+  const pendingCount = prospects.filter(p => p.status === "pending").length;
   const readyCount = prospects.filter((p) => p.status === "ready").length;
   const selectedReadyCount = prospects.filter(
     (p) => selectedIds.has(p.id) && p.status === "ready"
   ).length;
+
+  const isGenerating = generateMutation.isPending;
 
   return (
     <div className="p-6 space-y-6">
@@ -219,8 +298,38 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
         <CardHeader className="pb-4">
           <CardTitle className="text-lg font-medium">Upload Prospects</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <FileDropzone onFileSelect={handleFileSelect} />
+          
+          {prospects.length > 0 && (
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Tone</Label>
+                <Select value={tone} onValueChange={(v) => setTone(v as Tone)}>
+                  <SelectTrigger className="h-9" data-testid="select-bulk-tone">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="casual">Casual</SelectItem>
+                    <SelectItem value="professional">Professional</SelectItem>
+                    <SelectItem value="hyper-personal">Hyper-Personal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Length</Label>
+                <Select value={length} onValueChange={(v) => setLength(v as Length)}>
+                  <SelectTrigger className="h-9" data-testid="select-bulk-length">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="short">Short</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -241,7 +350,7 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
                   variant="outline"
                   size="sm"
                   onClick={handleGenerateAll}
-                  disabled={isGenerating || prospects.every((p) => p.status !== "pending")}
+                  disabled={isGenerating || pendingCount === 0}
                   data-testid="button-generate-all"
                 >
                   {isGenerating ? (
@@ -252,22 +361,18 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 mr-2" />
-                      Generate All
+                      Generate All ({pendingCount})
                     </>
                   )}
                 </Button>
                 <Button
                   size="sm"
                   onClick={handleSendSelected}
-                  disabled={isSending || selectedReadyCount === 0}
+                  disabled={selectedReadyCount === 0}
                   data-testid="button-send-selected"
                 >
-                  {isSending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4 mr-2" />
-                  )}
-                  Send ({selectedReadyCount})
+                  <Send className="w-4 h-4 mr-2" />
+                  Mark Sent ({selectedReadyCount})
                 </Button>
               </div>
             </div>
@@ -294,7 +399,7 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
         }
         onSave={handleSaveEmail}
         onRegenerate={handleRegenerateEmail}
-        isRegenerating={selectedProspect?.status === "generating"}
+        isRegenerating={regenerateMutation.isPending || selectedProspect?.status === "generating"}
       />
     </div>
   );

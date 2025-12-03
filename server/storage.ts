@@ -1,37 +1,72 @@
-import { type User, type InsertUser } from "@shared/schema";
 import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import type { Prospect, ProspectWithStatus, GeneratedEmail } from "@shared/schema";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  // Campaign/Prospect operations
+  createCampaign(prospects: Prospect[]): Promise<ProspectWithStatus[]>;
+  getCampaign(campaignId: string): Promise<ProspectWithStatus[] | undefined>;
+  updateProspectStatus(
+    campaignId: string,
+    prospectId: string,
+    status: ProspectWithStatus["status"],
+    email?: GeneratedEmail,
+    error?: string
+  ): Promise<ProspectWithStatus | undefined>;
+  getProspect(campaignId: string, prospectId: string): Promise<ProspectWithStatus | undefined>;
 }
 
 export class MemStorage implements IStorage {
-  private users: Map<string, User>;
+  private campaigns: Map<string, ProspectWithStatus[]>;
 
   constructor() {
-    this.users = new Map();
+    this.campaigns = new Map();
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async createCampaign(prospects: Prospect[]): Promise<ProspectWithStatus[]> {
+    const campaignId = randomUUID();
+    const prospectsWithStatus: ProspectWithStatus[] = prospects.map((p) => ({
+      ...p,
+      id: randomUUID(),
+      status: "pending" as const,
+    }));
+    this.campaigns.set(campaignId, prospectsWithStatus);
+    return prospectsWithStatus;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async getCampaign(campaignId: string): Promise<ProspectWithStatus[] | undefined> {
+    return this.campaigns.get(campaignId);
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async updateProspectStatus(
+    campaignId: string,
+    prospectId: string,
+    status: ProspectWithStatus["status"],
+    email?: GeneratedEmail,
+    error?: string
+  ): Promise<ProspectWithStatus | undefined> {
+    const campaign = this.campaigns.get(campaignId);
+    if (!campaign) return undefined;
+
+    const prospectIndex = campaign.findIndex((p) => p.id === prospectId);
+    if (prospectIndex === -1) return undefined;
+
+    campaign[prospectIndex] = {
+      ...campaign[prospectIndex],
+      status,
+      ...(email && { generatedEmail: email }),
+      ...(error && { error }),
+    };
+
+    return campaign[prospectIndex];
+  }
+
+  async getProspect(
+    campaignId: string,
+    prospectId: string
+  ): Promise<ProspectWithStatus | undefined> {
+    const campaign = this.campaigns.get(campaignId);
+    if (!campaign) return undefined;
+    return campaign.find((p) => p.id === prospectId);
   }
 }
 

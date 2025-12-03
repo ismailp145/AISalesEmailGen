@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2, Sparkles, Copy, Send, RefreshCw, Check } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 const formSchema = z.object({
   firstName: z.string().min(1, "Required"),
@@ -45,8 +47,6 @@ interface GeneratedEmail {
 }
 
 export function SingleEmailForm() {
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [generatedEmail, setGeneratedEmail] = useState<GeneratedEmail | null>(null);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
@@ -66,33 +66,41 @@ export function SingleEmailForm() {
     },
   });
 
-  const onSubmit = async (data: FormData) => {
-    setIsGenerating(true);
-    // todo: remove mock functionality - replace with actual API call
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    
-    const mockEmail: GeneratedEmail = {
-      subject: `Quick question about ${data.company}'s growth strategy`,
-      body: `Hi ${data.firstName},
+  const generateMutation = useMutation({
+    mutationFn: async (data: FormData) => {
+      const response = await apiRequest("POST", "/api/generate-email", {
+        prospect: {
+          firstName: data.firstName,
+          lastName: data.lastName,
+          company: data.company,
+          title: data.title,
+          email: data.email,
+          linkedinUrl: data.linkedinUrl || undefined,
+          notes: data.notes || undefined,
+        },
+        tone: data.tone,
+        length: data.length,
+      });
+      return response.json() as Promise<GeneratedEmail>;
+    },
+    onSuccess: (email) => {
+      setGeneratedEmail(email);
+      toast({
+        title: "Email generated",
+        description: "Your Basho email is ready to review.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Generation failed",
+        description: error?.message || "Could not generate email. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
-Noticed you recently joined ${data.company} as ${data.title} - congratulations on the new role! With the industry shifting toward AI-powered solutions, I imagine streamlining your team's outreach is high on your priority list.
-
-Many ${data.title}s in your position find that their team spends 60% of their time on manual research and personalization. That's time that could be spent closing deals.
-
-We help sales teams like yours generate highly personalized outreach at scale, cutting research time by 80% while improving response rates.
-
-Would you be open to a quick 15-minute call this week to explore if this could help ${data.company}? I have availability Tuesday at 2pm or Thursday at 10am.
-
-Best regards,
-Alex${data.notes ? `\n\nP.S. Regarding "${data.notes}" - I'd love to discuss this further.` : ""}`,
-    };
-    
-    setGeneratedEmail(mockEmail);
-    setIsGenerating(false);
-    toast({
-      title: "Email generated",
-      description: "Your Basho email is ready to review.",
-    });
+  const onSubmit = (data: FormData) => {
+    generateMutation.mutate(data);
   };
 
   const handleCopy = async () => {
@@ -108,19 +116,17 @@ Alex${data.notes ? `\n\nP.S. Regarding "${data.notes}" - I'd love to discuss thi
   };
 
   const handleSend = async () => {
-    setIsSending(true);
-    // todo: remove mock functionality - replace with actual API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setIsSending(false);
     toast({
-      title: "Email sent",
-      description: `Sent to ${form.getValues("email")}`,
+      title: "Email ready",
+      description: `Copy this email and send it to ${form.getValues("email")}`,
     });
   };
 
   const handleRegenerate = () => {
     form.handleSubmit(onSubmit)();
   };
+
+  const isGenerating = generateMutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -338,17 +344,10 @@ Alex${data.notes ? `\n\nP.S. Regarding "${data.notes}" - I'd love to discuss thi
                 <Button
                   size="sm"
                   onClick={handleSend}
-                  disabled={isSending}
                   data-testid="button-send"
                 >
-                  {isSending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4 mr-2" />
-                      Send
-                    </>
-                  )}
+                  <Send className="w-4 h-4 mr-2" />
+                  Copy & Send
                 </Button>
               </div>
             </div>
