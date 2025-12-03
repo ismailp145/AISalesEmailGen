@@ -2,11 +2,15 @@ import OpenAI from "openai";
 import type { Prospect, GeneratedEmail, UserProfile } from "@shared/schema";
 import { storage } from "./storage";
 
-// This is using Replit's AI Integrations service, which provides OpenAI-compatible API access without requiring your own OpenAI API key.
+// Check for user's own OpenAI API key first, fall back to Replit AI Integrations
+const useOwnKey = !!process.env.OPENAI_API_KEY;
+
 const openai = new OpenAI({
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: useOwnKey ? "https://api.openai.com/v1" : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  apiKey: useOwnKey ? process.env.OPENAI_API_KEY : process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
 });
+
+console.log(`[OpenAI] Using ${useOwnKey ? "your own OpenAI API key" : "Replit AI Integrations"}`);
 
 interface EmailGenerationOptions {
   prospect: Prospect;
@@ -103,8 +107,7 @@ export async function generateEmail(options: Omit<EmailGenerationOptions, 'profi
 
   console.log("[OpenAI] Starting email generation for:", options.prospect.firstName, options.prospect.lastName);
   console.log("[OpenAI] Profile loaded:", profile.senderName ? `${profile.senderName} @ ${profile.companyName}` : "No profile set");
-  console.log("[OpenAI] Base URL:", process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ? "configured" : "MISSING");
-  console.log("[OpenAI] API Key:", process.env.AI_INTEGRATIONS_OPENAI_API_KEY ? "configured" : "MISSING");
+  console.log("[OpenAI] Using:", useOwnKey ? "Your OpenAI API key" : "Replit AI Integrations");
 
   try {
     const response = await openai.chat.completions.create({
