@@ -6,12 +6,15 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { TopBar } from "@/components/TopBar";
+import { ClerkProviderWrapper } from "@/components/auth/ClerkProviderWrapper";
 import NotFound from "@/pages/not-found";
 import SingleEmailPage from "@/pages/SingleEmailPage";
 import BulkCampaignsPage from "@/pages/BulkCampaignsPage";
 import SequencesPage from "@/pages/SequencesPage";
 import SettingsPage from "@/pages/SettingsPage";
 import IntegrationsPage from "@/pages/IntegrationsPage";
+import SignInPage from "@/pages/SignInPage";
+import SignUpPage from "@/pages/SignUpPage";
 
 function Router() {
   return (
@@ -21,34 +24,46 @@ function Router() {
       <Route path="/sequences" component={SequencesPage} />
       <Route path="/integrations" component={IntegrationsPage} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/sign-in" component={SignInPage} />
+      <Route path="/sign-up" component={SignUpPage} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-function App() {
+function AppLayout({ children }: { children: React.ReactNode }) {
   const style = {
     "--sidebar-width": "15rem",
     "--sidebar-width-icon": "3rem",
   };
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <SidebarProvider style={style as React.CSSProperties}>
-          <div className="flex h-screen w-full">
-            <AppSidebar />
-            <div className="flex flex-col flex-1 overflow-hidden">
-              <TopBar />
-              <main className="flex-1 overflow-auto">
-                <Router />
-              </main>
-            </div>
-          </div>
-        </SidebarProvider>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <SidebarProvider style={style as React.CSSProperties}>
+      <div className="flex h-screen w-full">
+        <AppSidebar />
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <TopBar />
+          <main className="flex-1 overflow-auto">
+            {children}
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
+  );
+}
+
+function App() {
+  return (
+    <ClerkProviderWrapper>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AppLayout>
+            <Router />
+          </AppLayout>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ClerkProviderWrapper>
   );
 }
 

@@ -34,8 +34,9 @@ Preferred communication style: Simple, everyday language.
 - Class Variance Authority (CVA) for component variant management
 
 **Design System:**
-- Dark-first theme with high contrast (#000000 background, #FFFFFF foreground)
-- Single accent color (#00D1FF cyan) for CTAs and highlights
+- Dark-first theme with premium monochrome palette (pure black background, ivory text)
+- Graphite surfaces with porcelain/off-white primary buttons (Linear/Vercel-inspired)
+- No bright accent colors - fully monochrome aesthetic
 - System-based approach prioritizing information density and workflow efficiency
 - Component library built on Radix UI ensuring accessibility compliance
 
@@ -50,6 +51,8 @@ Preferred communication style: Simple, everyday language.
 - `/sequences` - Email Sequences page (multi-step automated campaigns)
 - `/integrations` - CRM integrations page (HubSpot, Salesforce, Pipedrive)
 - `/settings` - My Profile page (user/company settings for AI personalization)
+- `/sign-in` - Clerk Sign In page
+- `/sign-up` - Clerk Sign Up page
 
 ### Backend Architecture
 
@@ -146,6 +149,29 @@ Preferred communication style: Simple, everyday language.
    - Value: Your SendGrid API key (starts with `SG.`)
 4. Verify a sender email in SendGrid (Settings > Sender Authentication)
 5. Use that verified email as the "From" address when sending
+
+**Clerk Authentication (Setup Required):**
+- Packages installed: `@clerk/clerk-react` (frontend), `@clerk/express` (backend)
+- Frontend components ready in `client/src/components/auth/`:
+  - `ClerkProviderWrapper.tsx` - Wraps app with ClerkProvider
+  - `ProtectedRoute.tsx` - HOC for protecting routes
+  - `UserButton.tsx` - User avatar/menu component
+- Backend middleware ready in `server/middleware/clerk.ts`:
+  - `clerkAuthMiddleware` - Express middleware for Clerk
+  - `requireAuthentication` - Middleware to protect API routes
+  - `getCurrentUserId(req)` - Helper to get current user ID
+- Sign In/Up pages: `/sign-in` and `/sign-up`
+
+**Clerk Setup Instructions:**
+1. Create a Clerk account at https://clerk.com
+2. Create a new application in Clerk dashboard
+3. Get your API keys from Clerk dashboard > API Keys
+4. Add these secrets in Replit (Tools > Secrets):
+   - `VITE_CLERK_PUBLISHABLE_KEY` - Your Clerk publishable key (starts with `pk_`)
+   - `CLERK_SECRET_KEY` - Your Clerk secret key (starts with `sk_`)
+5. To protect routes, wrap components with `<ProtectedRoute>` component
+6. To protect API endpoints, add `requireAuthentication` middleware to routes
+7. Add `<UserButton />` to TopBar for user menu
 
 **Development Tools:**
 - Replit-specific plugins for vite: runtime error overlay, cartographer, dev banner
