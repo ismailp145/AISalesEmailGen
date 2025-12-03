@@ -107,10 +107,19 @@ Preferred communication style: Simple, everyday language.
 - `nanoid` and `uuid` for unique identifier generation
 - Express middleware: `express-session`, `connect-pg-simple` for session management (configured but not fully utilized)
 
-**Email Delivery:**
-- Abstracted email service layer (not yet implemented)
-- Designed for future integration with SMTP, SendGrid, or similar providers
-- Email preview and editing workflow in place
+**Email Delivery (SendGrid):**
+- SendGrid integration via `@sendgrid/mail` package
+- API endpoint: `POST /api/send-email` for sending generated emails
+- Service layer: `server/sendgrid.ts`
+
+**SendGrid Setup Instructions:**
+1. Create a SendGrid account at https://sendgrid.com
+2. Go to Settings > API Keys and create a new API key with "Mail Send" permissions
+3. In Replit, go to Secrets (Tools > Secrets) and add:
+   - Key: `SENDGRID_API_KEY`
+   - Value: Your SendGrid API key (starts with `SG.`)
+4. Verify a sender email in SendGrid (Settings > Sender Authentication)
+5. Use that verified email as the "From" address when sending
 
 **Development Tools:**
 - Replit-specific plugins for vite: runtime error overlay, cartographer, dev banner

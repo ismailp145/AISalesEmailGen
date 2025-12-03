@@ -24,6 +24,14 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -49,6 +57,8 @@ interface GeneratedEmail {
 export function SingleEmailForm() {
   const [generatedEmail, setGeneratedEmail] = useState<GeneratedEmail | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showSendDialog, setShowSendDialog] = useState(false);
+  const [senderEmail, setSenderEmail] = useState("");
   const { toast } = useToast();
 
   const form = useForm<FormData>({
@@ -99,6 +109,32 @@ export function SingleEmailForm() {
     },
   });
 
+  const sendMutation = useMutation({
+    mutationFn: async (params: { to: string; from: string; subject: string; body: string }) => {
+      const response = await apiRequest("POST", "/api/send-email", params);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to send email");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      setShowSendDialog(false);
+      setSenderEmail("");
+      toast({
+        title: "Email sent",
+        description: `Email delivered to ${form.getValues("email")}`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Send failed",
+        description: error?.message || "Could not send email. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: FormData) => {
     generateMutation.mutate(data);
   };
@@ -115,10 +151,18 @@ export function SingleEmailForm() {
     });
   };
 
-  const handleSend = async () => {
-    toast({
-      title: "Email ready",
-      description: `Copy this email and send it to ${form.getValues("email")}`,
+  const handleSend = () => {
+    setShowSendDialog(true);
+  };
+
+  const handleConfirmSend = () => {
+    if (!generatedEmail || !senderEmail) return;
+    
+    sendMutation.mutate({
+      to: form.getValues("email"),
+      from: senderEmail,
+      subject: generatedEmail.subject,
+      body: generatedEmail.body,
     });
   };
 
@@ -347,7 +391,7 @@ export function SingleEmailForm() {
                   data-testid="button-send"
                 >
                   <Send className="w-4 h-4 mr-2" />
-                  Copy & Send
+                  Send
                 </Button>
               </div>
             </div>
@@ -371,6 +415,71 @@ export function SingleEmailForm() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={showSendDialog} onOpenChange={setShowSendDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Email</DialogTitle>
+            <DialogDescription>
+              Enter your verified SendGrid sender email to send this message.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="from-email">From (your email)</Label>
+              <Input
+                id="from-email"
+                type="email"
+                placeholder="you@yourcompany.com"
+                value={senderEmail}
+                onChange={(e) => setSenderEmail(e.target.value)}
+                data-testid="input-sender-email"
+              />
+              <p className="text-xs text-muted-foreground">
+                This must be a verified sender in your SendGrid account
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>To</Label>
+              <div className="text-sm text-muted-foreground">
+                {form.getValues("email")}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Subject</Label>
+              <div className="text-sm text-muted-foreground truncate">
+                {generatedEmail?.subject}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowSendDialog(false)}
+              data-testid="button-cancel-send"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmSend}
+              disabled={!senderEmail || sendMutation.isPending}
+              data-testid="button-confirm-send"
+            >
+              {sendMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Send Email
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

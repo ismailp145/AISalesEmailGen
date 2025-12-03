@@ -1,8 +1,19 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { generateEmail, generateEmailsBatch } from "./openai";
+import { sendEmail, isSendGridConfigured, initSendGrid } from "./sendgrid";
 import { generateEmailRequestSchema, bulkGenerateRequestSchema } from "@shared/schema";
 import { z } from "zod";
+
+// Initialize SendGrid on module load
+initSendGrid();
+
+const sendEmailRequestSchema = z.object({
+  to: z.string().email("Invalid recipient email"),
+  from: z.string().email("Invalid sender email"),
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Email body is required"),
+});
 
 function checkAIIntegration(): { configured: boolean; message?: string } {
   const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
@@ -21,12 +32,13 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Health check for AI integration
+  // Health check for integrations
   app.get("/api/health", (req, res) => {
     const aiStatus = checkAIIntegration();
     return res.json({
       status: "ok",
       ai: aiStatus.configured ? "configured" : "not configured",
+      sendgrid: isSendGridConfigured() ? "configured" : "not configured",
     });
   });
 
@@ -117,6 +129,45 @@ export async function registerRoutes(
       return res.status(500).json({ 
         error: "Failed to generate emails",
         message: error?.message || "An unexpected error occurred. Please try again."
+      });
+    }
+  });
+
+  // Send email endpoint (via SendGrid)
+  app.post("/api/send-email", async (req, res) => {
+    try {
+      if (!isSendGridConfigured()) {
+        return res.status(503).json({
+          error: "Service unavailable",
+          message: "SendGrid is not configured. Add SENDGRID_API_KEY to your Secrets.",
+        });
+      }
+
+      const parsed = sendEmailRequestSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ 
+          error: "Invalid request", 
+          details: parsed.error.flatten() 
+        });
+      }
+
+      const { to, from, subject, body } = parsed.data;
+      const result = await sendEmail({ to, from, subject, body });
+
+      if (!result.success) {
+        return res.status(500).json({
+          error: "Failed to send email",
+          message: result.error,
+        });
+      }
+
+      return res.json({ success: true, message: "Email sent successfully" });
+    } catch (error: any) {
+      console.error("Send email error:", error);
+      return res.status(500).json({ 
+        error: "Failed to send email",
+        message: error?.message || "An unexpected error occurred."
       });
     }
   });
