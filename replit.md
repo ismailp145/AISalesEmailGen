@@ -47,6 +47,7 @@ Preferred communication style: Simple, everyday language.
 **Routing Structure:**
 - `/` - Single Email generation page
 - `/bulk` - Bulk campaign management page
+- `/sequences` - Email Sequences page (multi-step automated campaigns)
 - `/integrations` - CRM integrations page (HubSpot, Salesforce, Pipedrive)
 - `/settings` - My Profile page (user/company settings for AI personalization)
 
@@ -68,6 +69,16 @@ Preferred communication style: Simple, everyday language.
 - `GET /api/profile` - Retrieve user profile data
 - `POST /api/profile` - Save/update user profile data
 - `POST /api/send-email` - Send generated email via SendGrid
+- `GET /api/sequences` - List all sequences
+- `POST /api/sequences` - Create new sequence with steps
+- `GET /api/sequences/:id` - Get sequence with steps
+- `PATCH /api/sequences/:id` - Update sequence
+- `PATCH /api/sequences/:id/status` - Change sequence status (activate/pause/archive)
+- `DELETE /api/sequences/:id` - Delete sequence
+- `GET /api/sequences/:id/enrollments` - Get enrollments for a sequence
+- `POST /api/sequences/:id/enroll` - Enroll prospects in a sequence
+- `PATCH /api/enrollments/:id/status` - Update enrollment status
+- `POST /api/enrollments/:id/replied` - Mark enrollment as replied (auto-stops sequence)
 - Static file serving for built frontend assets
 
 **Service Layer Architecture:**
@@ -76,7 +87,8 @@ Preferred communication style: Simple, everyday language.
 - `server/routes.ts` - API route handlers with request validation
 
 **AI Integration Strategy:**
-- Uses Replit's AI Integrations service (OpenAI-compatible API)
+- Prioritizes user's own `OPENAI_API_KEY` secret if set
+- Falls back to Replit AI Integrations (`AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`) if no personal key
 - Centralized prompt engineering with customizable tone and length parameters
 - Support for three tone variations: casual, professional, hyper-personal
 - Two length options: short (3-4 sentences), medium (4-6 sentences)
@@ -84,23 +96,31 @@ Preferred communication style: Simple, everyday language.
 - Email signatures automatically use the sender's first name from their profile
 
 **Data Storage:**
-- In-memory storage implementation (MemStorage class) for development
-- Interface-based design (IStorage) allows swapping to persistent storage
+- PostgreSQL database via Neon (persistent storage with DatabaseStorage class)
+- Interface-based design (IStorage) for flexible storage implementation
+- Tables: user_profiles, prospects, email_activities, crm_connections, sequences, sequence_steps, sequence_enrollments, scheduled_emails
 - Campaign and prospect state tracking with status updates
-- UUID-based entity identification
+- Serial IDs for database entities
+
+**Email Sequences Architecture:**
+- Multi-step email sequences with configurable delays (Day 0, 1, 3, 7, etc.)
+- Sequence statuses: draft, active, paused, archived
+- Enrollment statuses: active, paused, completed, replied, bounced, unsubscribed
+- Auto-stop on reply: when prospect replies, pending emails are cancelled
+- Scheduler service (`server/scheduler.ts`) for automated email sending
 
 ### External Dependencies
 
 **Database:**
 - Drizzle ORM configured for PostgreSQL via Neon Database (@neondatabase/serverless)
 - Schema defined in `shared/schema.ts` using Drizzle's type-safe schema builder
-- Migration support via drizzle-kit
-- **Note:** Database schema not yet implemented; storage currently in-memory
+- Migration support via drizzle-kit (`npm run db:push` to sync schema)
+- Tables: user_profiles, prospects, email_activities, crm_connections, sequences, sequence_steps, sequence_enrollments, scheduled_emails
 
 **AI Services:**
-- OpenAI-compatible API via Replit AI Integrations
-- Environment variables: `AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`
-- Fallback support for standard OpenAI API integration
+- Primary: User's own `OPENAI_API_KEY` secret (direct OpenAI API)
+- Fallback: Replit AI Integrations (`AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`)
+- Model: gpt-4o for email generation
 
 **LinkedIn Enrichment:**
 - Mock implementation in current codebase (placeholder service)

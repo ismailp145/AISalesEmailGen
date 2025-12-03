@@ -9,6 +9,7 @@ import { TopBar } from "@/components/TopBar";
 import NotFound from "@/pages/not-found";
 import SingleEmailPage from "@/pages/SingleEmailPage";
 import BulkCampaignsPage from "@/pages/BulkCampaignsPage";
+import SequencesPage from "@/pages/SequencesPage";
 import SettingsPage from "@/pages/SettingsPage";
 import IntegrationsPage from "@/pages/IntegrationsPage";
 
@@ -17,6 +18,7 @@ function Router() {
     <Switch>
       <Route path="/" component={SingleEmailPage} />
       <Route path="/bulk" component={BulkCampaignsPage} />
+      <Route path="/sequences" component={SequencesPage} />
       <Route path="/integrations" component={IntegrationsPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
