@@ -46,7 +46,7 @@ Basho Studio is a full-stack AI-powered sales email generator designed for perso
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/ismailp145/AISalesEmailGen.git
+   git clone <your-repo-url>
    cd AISalesEmailGen
    ```
 
@@ -76,7 +76,23 @@ The application will be available at `http://localhost:5000`.
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string (Neon recommended) |
-| `OPENAI_API_KEY` | Your OpenAI API key for email generation |
+
+### AI Configuration (One Required)
+
+The application requires one of the following AI configurations:
+
+| Variable | Description |
+|----------|-------------|
+| `OPENAI_API_KEY` | Your OpenAI API key (recommended) |
+
+**OR** (Replit-specific fallback):
+
+| Variable | Description |
+|----------|-------------|
+| `AI_INTEGRATIONS_OPENAI_BASE_URL` | Replit AI integration base URL |
+| `AI_INTEGRATIONS_OPENAI_API_KEY` | Replit AI integration API key |
+
+> **Note:** If `OPENAI_API_KEY` is set, it takes precedence over Replit AI Integrations. The Replit fallback is automatically configured when running on Replit and requires no manual setup.
 
 ### Optional Environment Variables
 
@@ -86,12 +102,6 @@ The application will be available at `http://localhost:5000`.
 | `HUBSPOT_API_KEY` | HubSpot API key for CRM integration |
 | `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key for authentication |
 | `CLERK_SECRET_KEY` | Clerk secret key for authentication |
-
-### Fallback AI Integration
-
-If no `OPENAI_API_KEY` is set, the application will attempt to use Replit AI Integrations:
-- `AI_INTEGRATIONS_OPENAI_BASE_URL`
-- `AI_INTEGRATIONS_OPENAI_API_KEY`
 
 ## Scripts
 
