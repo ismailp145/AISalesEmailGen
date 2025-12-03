@@ -388,3 +388,31 @@ export interface SequenceWithSteps extends SequenceRecord {
 export interface EnrollmentWithProspect extends SequenceEnrollmentRecord {
   prospect: ProspectRecord;
 }
+
+// ============================================
+// Trigger Detection Types
+// ============================================
+
+export type TriggerType = "news" | "linkedin" | "company_event" | "industry_trend" | "job_change" | "funding";
+
+export interface DetectedTrigger {
+  id: string;
+  type: TriggerType;
+  title: string;
+  description: string;
+  relevance: "high" | "medium" | "low";
+  source: string;
+  date?: string;
+  selected?: boolean;
+}
+
+export const detectTriggersRequestSchema = z.object({
+  prospect: prospectSchema,
+});
+
+export type DetectTriggersRequest = z.infer<typeof detectTriggersRequestSchema>;
+
+export interface DetectTriggersResponse {
+  triggers: DetectedTrigger[];
+  prospectSummary: string;
+}
