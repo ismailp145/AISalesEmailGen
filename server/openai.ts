@@ -1,6 +1,7 @@
 import OpenAI from "openai";
-import type { Prospect, GeneratedEmail, UserProfile } from "@shared/schema";
+import type { Prospect, GeneratedEmail, UserProfile, DetectedTrigger, DetectTriggersResponse } from "@shared/schema";
 import { storage } from "./storage";
+import { nanoid } from "nanoid";
 
 // Check for user's own OpenAI API key first, fall back to Replit AI Integrations
 const useOwnKey = !!process.env.OPENAI_API_KEY;
@@ -17,10 +18,11 @@ interface EmailGenerationOptions {
   tone: "casual" | "professional" | "hyper-personal";
   length: "short" | "medium";
   profile?: UserProfile;
+  triggers?: DetectedTrigger[];
 }
 
 function buildPrompt(options: EmailGenerationOptions): string {
-  const { prospect, tone, length, profile } = options;
+  const { prospect, tone, length, profile, triggers } = options;
   
   const toneInstructions = {
     casual: "Write in a friendly, conversational tone. Use contractions and casual language.",
@@ -40,6 +42,18 @@ function buildPrompt(options: EmailGenerationOptions): string {
   const notesContext = prospect.notes 
     ? `\nAdditional Context: ${prospect.notes}` 
     : "";
+
+  // Build trigger context if provided
+  let triggerContext = "";
+  if (triggers && triggers.length > 0) {
+    const selectedTriggers = triggers.filter(t => t.selected);
+    if (selectedTriggers.length > 0) {
+      triggerContext = `\n\nDETECTED TRIGGERS (use these as personalization hooks in your email opener):
+${selectedTriggers.map((t, i) => `${i + 1}. [${t.type.toUpperCase()}] ${t.title}: ${t.description} (Source: ${t.source}, ${t.date || 'Recent'})`).join("\n")}
+
+IMPORTANT: Reference at least one of these triggers naturally in your email opening to show you've done research on them.`;
+    }
+  }
 
   // Build sender context from profile
   let senderContext = "";
@@ -76,7 +90,7 @@ Generate a personalized cold sales email for the following prospect:
 Name: ${prospect.firstName} ${prospect.lastName}
 Title: ${prospect.title}
 Company: ${prospect.company}
-Email: ${prospect.email}${linkedinContext}${notesContext}${senderContext}
+Email: ${prospect.email}${linkedinContext}${notesContext}${triggerContext}${senderContext}
 
 TONE: ${toneInstructions[tone]}
 
@@ -98,10 +112,10 @@ Return your response as a JSON object with two fields:
 The email should be signed with just "Best," followed by "${signatureName}" (no full name or title).`;
 }
 
-export async function generateEmail(options: Omit<EmailGenerationOptions, 'profile'>): Promise<GeneratedEmail> {
+export async function generateEmail(options: Omit<EmailGenerationOptions, 'profile'> & { triggers?: DetectedTrigger[] }): Promise<GeneratedEmail> {
   // Fetch user profile to include in the prompt
   const profile = await storage.getUserProfile();
-  const optionsWithProfile: EmailGenerationOptions = { ...options, profile };
+  const optionsWithProfile: EmailGenerationOptions = { ...options, profile, triggers: options.triggers };
   
   const prompt = buildPrompt(optionsWithProfile);
 
@@ -195,4 +209,98 @@ export async function generateEmailsBatch(
   );
 
   return results;
+}
+
+// ============================================
+// Trigger Detection
+// ============================================
+
+function buildTriggerDetectionPrompt(prospect: Prospect): string {
+  const linkedinContext = prospect.linkedinUrl 
+    ? `\nLinkedIn Profile: ${prospect.linkedinUrl}` 
+    : "";
+  
+  const notesContext = prospect.notes 
+    ? `\nAdditional Context: ${prospect.notes}` 
+    : "";
+
+  return `You are an expert sales researcher. Your job is to identify potential "triggers" - recent events or activities that could be used as personalized conversation starters in a cold email.
+
+Analyze the following prospect and their company. Generate realistic, plausible triggers based on what you know about:
+- The company and its industry
+- Common activities for someone in their role
+- Recent trends in their sector
+- Typical events for companies of this type
+
+PROSPECT INFORMATION:
+Name: ${prospect.firstName} ${prospect.lastName}
+Title: ${prospect.title}
+Company: ${prospect.company}${linkedinContext}${notesContext}
+
+Generate 4-6 potential triggers. For each trigger, consider:
+1. NEWS - Company announcements, press releases, product launches, expansions
+2. LINKEDIN - Posts, articles, profile updates, job changes
+3. COMPANY_EVENT - Conferences, webinars, awards, partnerships
+4. INDUSTRY_TREND - Market shifts, new regulations, emerging technologies
+5. JOB_CHANGE - Promotions, new roles, team expansions
+6. FUNDING - Investment rounds, acquisitions, financial milestones
+
+Return a JSON object with:
+{
+  "triggers": [
+    {
+      "type": "news" | "linkedin" | "company_event" | "industry_trend" | "job_change" | "funding",
+      "title": "Short, compelling title for the trigger",
+      "description": "2-3 sentence description of the trigger and why it's relevant",
+      "relevance": "high" | "medium" | "low",
+      "source": "Where this might have been found (e.g., 'Company Blog', 'LinkedIn', 'TechCrunch', 'Press Release')",
+      "date": "Approximate date (e.g., 'This week', 'November 2024', 'Recently')"
+    }
+  ],
+  "prospectSummary": "Brief 2-3 sentence summary of who this prospect is and key insights about their role/company"
+}
+
+Make the triggers feel authentic and specific to this person/company. Avoid generic triggers.
+Prioritize triggers with higher relevance that would make great email openers.`;
+}
+
+export async function detectTriggers(prospect: Prospect): Promise<DetectTriggersResponse> {
+  const prompt = buildTriggerDetectionPrompt(prospect);
+
+  console.log("[OpenAI] Starting trigger detection for:", prospect.firstName, prospect.lastName, "@", prospect.company);
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 2048,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    
+    if (!content) {
+      console.error("[OpenAI] No content in trigger detection response");
+      throw new Error("No response from AI");
+    }
+
+    const parsed = JSON.parse(content);
+    
+    // Add unique IDs to each trigger
+    const triggersWithIds: DetectedTrigger[] = parsed.triggers.map((trigger: any) => ({
+      ...trigger,
+      id: nanoid(8),
+      selected: trigger.relevance === "high", // Auto-select high relevance triggers
+    }));
+
+    console.log("[OpenAI] Detected", triggersWithIds.length, "triggers for:", prospect.firstName);
+    
+    return {
+      triggers: triggersWithIds,
+      prospectSummary: parsed.prospectSummary || "",
+    };
+  } catch (error: any) {
+    console.error("[OpenAI] Trigger detection error:", error?.message || error);
+    throw error;
+  }
 }
