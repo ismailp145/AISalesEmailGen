@@ -1,5 +1,54 @@
 import { z } from "zod";
 
+// User profile schema for sender information
+export const userProfileSchema = z.object({
+  // Personal info
+  senderName: z.string().min(1, "Name is required"),
+  senderTitle: z.string().optional(),
+  senderEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  calendarLink: z.string().url("Invalid URL").optional().or(z.literal("")),
+  
+  // Company info
+  companyName: z.string().min(1, "Company name is required"),
+  companyWebsite: z.string().url("Invalid URL").optional().or(z.literal("")),
+  industry: z.string().optional(),
+  companyDescription: z.string().optional(),
+  
+  // Product/Service info
+  productName: z.string().optional(),
+  productDescription: z.string().optional(),
+  valueProposition: z.string().optional(),
+  targetAudience: z.string().optional(),
+  
+  // Sales context
+  painPoints: z.string().optional(),
+  differentiators: z.string().optional(),
+  socialProof: z.string().optional(),
+  commonObjections: z.string().optional(),
+});
+
+export type UserProfile = z.infer<typeof userProfileSchema>;
+
+// Default empty profile
+export const defaultUserProfile: UserProfile = {
+  senderName: "",
+  senderTitle: "",
+  senderEmail: "",
+  calendarLink: "",
+  companyName: "",
+  companyWebsite: "",
+  industry: "",
+  companyDescription: "",
+  productName: "",
+  productDescription: "",
+  valueProposition: "",
+  targetAudience: "",
+  painPoints: "",
+  differentiators: "",
+  socialProof: "",
+  commonObjections: "",
+};
+
 // Prospect schema for email generation
 export const prospectSchema = z.object({
   firstName: z.string().min(1, "First name is required"),

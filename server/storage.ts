@@ -1,7 +1,12 @@
 import { randomUUID } from "crypto";
-import type { Prospect, ProspectWithStatus, GeneratedEmail } from "@shared/schema";
+import type { Prospect, ProspectWithStatus, GeneratedEmail, UserProfile } from "@shared/schema";
+import { defaultUserProfile } from "@shared/schema";
 
 export interface IStorage {
+  // User profile operations
+  getUserProfile(): Promise<UserProfile>;
+  saveUserProfile(profile: UserProfile): Promise<UserProfile>;
+  
   // Campaign/Prospect operations
   createCampaign(prospects: Prospect[]): Promise<ProspectWithStatus[]>;
   getCampaign(campaignId: string): Promise<ProspectWithStatus[] | undefined>;
@@ -17,9 +22,20 @@ export interface IStorage {
 
 export class MemStorage implements IStorage {
   private campaigns: Map<string, ProspectWithStatus[]>;
+  private userProfile: UserProfile;
 
   constructor() {
     this.campaigns = new Map();
+    this.userProfile = { ...defaultUserProfile };
+  }
+  
+  async getUserProfile(): Promise<UserProfile> {
+    return this.userProfile;
+  }
+  
+  async saveUserProfile(profile: UserProfile): Promise<UserProfile> {
+    this.userProfile = { ...profile };
+    return this.userProfile;
   }
 
   async createCampaign(prospects: Prospect[]): Promise<ProspectWithStatus[]> {

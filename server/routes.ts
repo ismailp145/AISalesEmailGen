@@ -2,7 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { generateEmail, generateEmailsBatch } from "./openai";
 import { sendEmail, isSendGridConfigured, initSendGrid } from "./sendgrid";
-import { generateEmailRequestSchema, bulkGenerateRequestSchema } from "@shared/schema";
+import { storage } from "./storage";
+import { generateEmailRequestSchema, bulkGenerateRequestSchema, userProfileSchema } from "@shared/schema";
 import { z } from "zod";
 
 // Initialize SendGrid on module load
@@ -168,6 +169,43 @@ export async function registerRoutes(
       return res.status(500).json({ 
         error: "Failed to send email",
         message: error?.message || "An unexpected error occurred."
+      });
+    }
+  });
+
+  // Get user profile
+  app.get("/api/profile", async (req, res) => {
+    try {
+      const profile = await storage.getUserProfile();
+      return res.json(profile);
+    } catch (error: any) {
+      console.error("Get profile error:", error);
+      return res.status(500).json({
+        error: "Failed to get profile",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Save user profile
+  app.post("/api/profile", async (req, res) => {
+    try {
+      const parsed = userProfileSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const profile = await storage.saveUserProfile(parsed.data);
+      return res.json(profile);
+    } catch (error: any) {
+      console.error("Save profile error:", error);
+      return res.status(500).json({
+        error: "Failed to save profile",
+        message: error?.message || "An unexpected error occurred.",
       });
     }
   });
