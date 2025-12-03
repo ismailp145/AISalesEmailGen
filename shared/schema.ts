@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pgTable, text, serial, timestamp, jsonb, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, jsonb, varchar, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 
@@ -78,9 +78,72 @@ export const crmConnections = pgTable("crm_connections", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// ============================================
+// Email Sequences Tables
+// ============================================
+
+// Sequences table - the sequence template
+export const sequences = pgTable("sequences", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("draft"), // 'draft', 'active', 'paused', 'archived'
+  tone: text("tone").notNull().default("professional"), // 'casual', 'professional', 'hyper-personal'
+  length: text("length").notNull().default("medium"), // 'short', 'medium'
+  totalEnrolled: integer("total_enrolled").notNull().default(0),
+  totalCompleted: integer("total_completed").notNull().default(0),
+  totalReplied: integer("total_replied").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Sequence steps table - individual steps in a sequence
+export const sequenceSteps = pgTable("sequence_steps", {
+  id: serial("id").primaryKey(),
+  sequenceId: integer("sequence_id").notNull().references(() => sequences.id, { onDelete: "cascade" }),
+  stepNumber: integer("step_number").notNull(), // 1, 2, 3, etc.
+  delayDays: integer("delay_days").notNull(), // Days after enrollment (0 = immediate, 1 = day 1, 3 = day 3)
+  sendTimeHour: integer("send_time_hour").notNull().default(9), // Hour of day to send (0-23)
+  sendTimeMinute: integer("send_time_minute").notNull().default(0), // Minute of hour (0-59)
+  subjectTemplate: text("subject_template"), // Optional: override subject for follow-ups
+  bodyTemplate: text("body_template"), // Optional: custom template, or null for AI generation
+  isFollowUp: boolean("is_follow_up").notNull().default(false), // Whether this is a follow-up to previous email
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Sequence enrollments table - tracks prospects in sequences
+export const sequenceEnrollments = pgTable("sequence_enrollments", {
+  id: serial("id").primaryKey(),
+  sequenceId: integer("sequence_id").notNull().references(() => sequences.id, { onDelete: "cascade" }),
+  prospectId: integer("prospect_id").notNull().references(() => prospects.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("active"), // 'active', 'paused', 'completed', 'replied', 'bounced', 'unsubscribed'
+  currentStepNumber: integer("current_step_number").notNull().default(0), // 0 = not started yet
+  nextSendAt: timestamp("next_send_at"), // When to send the next email
+  enrolledAt: timestamp("enrolled_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  repliedAt: timestamp("replied_at"),
+  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+});
+
+// Scheduled emails table - emails queued to be sent
+export const scheduledEmails = pgTable("scheduled_emails", {
+  id: serial("id").primaryKey(),
+  enrollmentId: integer("enrollment_id").notNull().references(() => sequenceEnrollments.id, { onDelete: "cascade" }),
+  stepId: integer("step_id").notNull().references(() => sequenceSteps.id, { onDelete: "cascade" }),
+  prospectId: integer("prospect_id").notNull().references(() => prospects.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  status: text("status").notNull().default("scheduled"), // 'scheduled', 'sending', 'sent', 'failed', 'cancelled'
+  sentAt: timestamp("sent_at"),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations
 export const prospectsRelations = relations(prospects, ({ many }) => ({
   emailActivities: many(emailActivities),
+  enrollments: many(sequenceEnrollments),
 }));
 
 export const emailActivitiesRelations = relations(emailActivities, ({ one }) => ({
@@ -90,11 +153,55 @@ export const emailActivitiesRelations = relations(emailActivities, ({ one }) => 
   }),
 }));
 
+export const sequencesRelations = relations(sequences, ({ many }) => ({
+  steps: many(sequenceSteps),
+  enrollments: many(sequenceEnrollments),
+}));
+
+export const sequenceStepsRelations = relations(sequenceSteps, ({ one, many }) => ({
+  sequence: one(sequences, {
+    fields: [sequenceSteps.sequenceId],
+    references: [sequences.id],
+  }),
+  scheduledEmails: many(scheduledEmails),
+}));
+
+export const sequenceEnrollmentsRelations = relations(sequenceEnrollments, ({ one, many }) => ({
+  sequence: one(sequences, {
+    fields: [sequenceEnrollments.sequenceId],
+    references: [sequences.id],
+  }),
+  prospect: one(prospects, {
+    fields: [sequenceEnrollments.prospectId],
+    references: [prospects.id],
+  }),
+  scheduledEmails: many(scheduledEmails),
+}));
+
+export const scheduledEmailsRelations = relations(scheduledEmails, ({ one }) => ({
+  enrollment: one(sequenceEnrollments, {
+    fields: [scheduledEmails.enrollmentId],
+    references: [sequenceEnrollments.id],
+  }),
+  step: one(sequenceSteps, {
+    fields: [scheduledEmails.stepId],
+    references: [sequenceSteps.id],
+  }),
+  prospect: one(prospects, {
+    fields: [scheduledEmails.prospectId],
+    references: [prospects.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertProspectSchema = createInsertSchema(prospects).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertEmailActivitySchema = createInsertSchema(emailActivities).omit({ id: true, createdAt: true });
 export const insertCrmConnectionSchema = createInsertSchema(crmConnections).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSequenceSchema = createInsertSchema(sequences).omit({ id: true, createdAt: true, updatedAt: true, totalEnrolled: true, totalCompleted: true, totalReplied: true });
+export const insertSequenceStepSchema = createInsertSchema(sequenceSteps).omit({ id: true, createdAt: true });
+export const insertSequenceEnrollmentSchema = createInsertSchema(sequenceEnrollments).omit({ id: true, enrolledAt: true, lastActivityAt: true });
+export const insertScheduledEmailSchema = createInsertSchema(scheduledEmails).omit({ id: true, createdAt: true });
 
 // Types
 export type UserProfileRecord = typeof userProfiles.$inferSelect;
@@ -105,6 +212,14 @@ export type EmailActivityRecord = typeof emailActivities.$inferSelect;
 export type InsertEmailActivity = z.infer<typeof insertEmailActivitySchema>;
 export type CrmConnectionRecord = typeof crmConnections.$inferSelect;
 export type InsertCrmConnection = z.infer<typeof insertCrmConnectionSchema>;
+export type SequenceRecord = typeof sequences.$inferSelect;
+export type InsertSequence = z.infer<typeof insertSequenceSchema>;
+export type SequenceStepRecord = typeof sequenceSteps.$inferSelect;
+export type InsertSequenceStep = z.infer<typeof insertSequenceStepSchema>;
+export type SequenceEnrollmentRecord = typeof sequenceEnrollments.$inferSelect;
+export type InsertSequenceEnrollment = z.infer<typeof insertSequenceEnrollmentSchema>;
+export type ScheduledEmailRecord = typeof scheduledEmails.$inferSelect;
+export type InsertScheduledEmail = z.infer<typeof insertScheduledEmailSchema>;
 
 // ============================================
 // Zod Schemas (for API validation)
@@ -210,4 +325,66 @@ export interface CrmConnection {
   accountName: string | null;
   isActive: boolean;
   lastSyncAt: Date | null;
+}
+
+// ============================================
+// Sequence API Schemas
+// ============================================
+
+// Sequence step schema for API
+export const sequenceStepApiSchema = z.object({
+  stepNumber: z.number().min(1),
+  delayDays: z.number().min(0),
+  sendTimeHour: z.number().min(0).max(23).default(9),
+  sendTimeMinute: z.number().min(0).max(59).default(0),
+  subjectTemplate: z.string().optional(),
+  bodyTemplate: z.string().optional(),
+  isFollowUp: z.boolean().default(false),
+});
+
+export type SequenceStepApi = z.infer<typeof sequenceStepApiSchema>;
+
+// Create sequence request
+export const createSequenceRequestSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional(),
+  tone: z.enum(["casual", "professional", "hyper-personal"]).default("professional"),
+  length: z.enum(["short", "medium"]).default("medium"),
+  steps: z.array(sequenceStepApiSchema).min(1, "At least one step is required"),
+});
+
+export type CreateSequenceRequest = z.infer<typeof createSequenceRequestSchema>;
+
+// Update sequence request
+export const updateSequenceRequestSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  status: z.enum(["draft", "active", "paused", "archived"]).optional(),
+  tone: z.enum(["casual", "professional", "hyper-personal"]).optional(),
+  length: z.enum(["short", "medium"]).optional(),
+  steps: z.array(sequenceStepApiSchema).optional(),
+});
+
+export type UpdateSequenceRequest = z.infer<typeof updateSequenceRequestSchema>;
+
+// Enroll prospects request
+export const enrollProspectsRequestSchema = z.object({
+  prospectIds: z.array(z.number()).min(1, "At least one prospect is required"),
+});
+
+export type EnrollProspectsRequest = z.infer<typeof enrollProspectsRequestSchema>;
+
+// Sequence status types
+export type SequenceStatus = "draft" | "active" | "paused" | "archived";
+export type EnrollmentStatus = "active" | "paused" | "completed" | "replied" | "bounced" | "unsubscribed";
+export type ScheduledEmailStatus = "scheduled" | "sending" | "sent" | "failed" | "cancelled";
+
+// Sequence with steps for API response
+export interface SequenceWithSteps extends SequenceRecord {
+  steps: SequenceStepRecord[];
+}
+
+// Enrollment with prospect info for API response
+export interface EnrollmentWithProspect extends SequenceEnrollmentRecord {
+  prospect: ProspectRecord;
 }
