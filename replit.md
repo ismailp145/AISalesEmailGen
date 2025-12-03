@@ -47,7 +47,7 @@ Preferred communication style: Simple, everyday language.
 **Routing Structure:**
 - `/` - Single Email generation page
 - `/bulk` - Bulk campaign management page
-- `/settings` - Application settings and configuration
+- `/settings` - My Profile page (user/company settings for AI personalization)
 
 ### Backend Architecture
 
@@ -62,8 +62,11 @@ Preferred communication style: Simple, everyday language.
 - Zod schema validation for request payloads
 
 **Core API Endpoints:**
-- `POST /api/generate-email` - Single prospect email generation
+- `POST /api/generate-email` - Single prospect email generation (automatically uses user profile for context)
 - `POST /api/generate-emails-bulk` - Batch email generation for multiple prospects
+- `GET /api/profile` - Retrieve user profile data
+- `POST /api/profile` - Save/update user profile data
+- `POST /api/send-email` - Send generated email via SendGrid
 - Static file serving for built frontend assets
 
 **Service Layer Architecture:**
@@ -76,6 +79,8 @@ Preferred communication style: Simple, everyday language.
 - Centralized prompt engineering with customizable tone and length parameters
 - Support for three tone variations: casual, professional, hyper-personal
 - Two length options: short (3-4 sentences), medium (4-6 sentences)
+- AI prompt dynamically incorporates user profile (name, company, products, value props) for contextual email generation
+- Email signatures automatically use the sender's first name from their profile
 
 **Data Storage:**
 - In-memory storage implementation (MemStorage class) for development
