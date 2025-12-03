@@ -286,12 +286,26 @@ export async function detectTriggers(prospect: Prospect): Promise<DetectTriggers
 
     const parsed = JSON.parse(content);
     
-    // Add unique IDs to each trigger
-    const triggersWithIds: DetectedTrigger[] = parsed.triggers.map((trigger: any) => ({
-      ...trigger,
-      id: nanoid(8),
-      selected: trigger.relevance === "high", // Auto-select high relevance triggers
-    }));
+    // Valid trigger types that match our schema
+    const validTypes = ["news", "linkedin", "company_event", "industry_trend", "job_change", "funding"] as const;
+    const validRelevance = ["high", "medium", "low"] as const;
+    
+    // Add unique IDs to each trigger and validate types
+    const triggersWithIds: DetectedTrigger[] = parsed.triggers
+      .filter((trigger: any) => 
+        validTypes.includes(trigger.type) && 
+        validRelevance.includes(trigger.relevance)
+      )
+      .map((trigger: any) => ({
+        id: nanoid(8),
+        type: trigger.type,
+        title: String(trigger.title || ""),
+        description: String(trigger.description || ""),
+        relevance: trigger.relevance,
+        source: String(trigger.source || ""),
+        date: trigger.date ? String(trigger.date) : undefined,
+        selected: trigger.relevance === "high", // Auto-select high relevance triggers
+      }));
 
     console.log("[OpenAI] Detected", triggersWithIds.length, "triggers for:", prospect.firstName);
     

@@ -67,7 +67,8 @@ Preferred communication style: Simple, everyday language.
 - Zod schema validation for request payloads
 
 **Core API Endpoints:**
-- `POST /api/generate-email` - Single prospect email generation (automatically uses user profile for context)
+- `POST /api/generate-email` - Single prospect email generation (automatically uses user profile for context, optionally includes selected triggers)
+- `POST /api/detect-triggers` - AI-powered trigger detection for a prospect (finds news, LinkedIn activity, company events, etc.)
 - `POST /api/generate-emails-bulk` - Batch email generation for multiple prospects
 - `GET /api/profile` - Retrieve user profile data
 - `POST /api/profile` - Save/update user profile data
@@ -97,6 +98,7 @@ Preferred communication style: Simple, everyday language.
 - Two length options: short (3-4 sentences), medium (4-6 sentences)
 - AI prompt dynamically incorporates user profile (name, company, products, value props) for contextual email generation
 - Email signatures automatically use the sender's first name from their profile
+- **AI Trigger Detection:** Uses GPT-4o to detect relevant triggers (news, LinkedIn activity, company events, industry trends, job changes, funding) that can be selected and included in email generation for hyper-personalized openers. Trigger types: news, linkedin, company_event, industry_trend, job_change, funding. High-relevance triggers are auto-selected.
 
 **Data Storage:**
 - PostgreSQL database via Neon (persistent storage with DatabaseStorage class)
