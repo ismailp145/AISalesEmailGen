@@ -3,12 +3,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
-import { Loader2, Sparkles, Copy, Send, RefreshCw, Check } from "lucide-react";
+import { Loader2, Sparkles, Copy, Send, RefreshCw, Check, Search, Newspaper, Linkedin, Building, TrendingUp, Briefcase, DollarSign, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -32,8 +34,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import type { DetectedTrigger, TriggerType } from "@shared/schema";
 
 const formSchema = z.object({
   firstName: z.string().min(1, "Required"),
@@ -54,11 +62,34 @@ interface GeneratedEmail {
   body: string;
 }
 
+interface DetectTriggersResponse {
+  triggers: DetectedTrigger[];
+  prospectSummary: string;
+}
+
+const triggerTypeConfig: Record<TriggerType, { icon: typeof Newspaper; label: string }> = {
+  news: { icon: Newspaper, label: "News" },
+  linkedin: { icon: Linkedin, label: "LinkedIn" },
+  company_event: { icon: Building, label: "Company Event" },
+  industry_trend: { icon: TrendingUp, label: "Industry Trend" },
+  job_change: { icon: Briefcase, label: "Job Change" },
+  funding: { icon: DollarSign, label: "Funding" },
+};
+
+const relevanceColors = {
+  high: "bg-primary/10 text-primary border-primary/20",
+  medium: "bg-muted text-muted-foreground border-border",
+  low: "bg-muted/50 text-muted-foreground/70 border-border/50",
+};
+
 export function SingleEmailForm() {
   const [generatedEmail, setGeneratedEmail] = useState<GeneratedEmail | null>(null);
   const [copied, setCopied] = useState(false);
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [senderEmail, setSenderEmail] = useState("");
+  const [triggers, setTriggers] = useState<DetectedTrigger[]>([]);
+  const [prospectSummary, setProspectSummary] = useState("");
+  const [showTriggers, setShowTriggers] = useState(false);
   const { toast } = useToast();
 
   const form = useForm<FormData>({
@@ -76,8 +107,42 @@ export function SingleEmailForm() {
     },
   });
 
+  const detectTriggersMutation = useMutation({
+    mutationFn: async (data: FormData) => {
+      const response = await apiRequest("POST", "/api/detect-triggers", {
+        prospect: {
+          firstName: data.firstName,
+          lastName: data.lastName,
+          company: data.company,
+          title: data.title,
+          email: data.email,
+          linkedinUrl: data.linkedinUrl || undefined,
+          notes: data.notes || undefined,
+        },
+      });
+      return response.json() as Promise<DetectTriggersResponse>;
+    },
+    onSuccess: (result) => {
+      setTriggers(result.triggers);
+      setProspectSummary(result.prospectSummary);
+      setShowTriggers(true);
+      toast({
+        title: "Triggers detected",
+        description: `Found ${result.triggers.length} potential conversation starters.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Detection failed",
+        description: error?.message || "Could not detect triggers. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const generateMutation = useMutation({
     mutationFn: async (data: FormData) => {
+      const selectedTriggers = triggers.filter(t => t.selected);
       const response = await apiRequest("POST", "/api/generate-email", {
         prospect: {
           firstName: data.firstName,
@@ -90,6 +155,7 @@ export function SingleEmailForm() {
         },
         tone: data.tone,
         length: data.length,
+        triggers: selectedTriggers.length > 0 ? selectedTriggers : undefined,
       });
       return response.json() as Promise<GeneratedEmail>;
     },
@@ -139,6 +205,34 @@ export function SingleEmailForm() {
     generateMutation.mutate(data);
   };
 
+  const handleDetectTriggers = () => {
+    const data = form.getValues();
+    const isValid = data.firstName && data.lastName && data.company && data.title;
+    if (!isValid) {
+      toast({
+        title: "Missing information",
+        description: "Please fill in prospect details before detecting triggers.",
+        variant: "destructive",
+      });
+      return;
+    }
+    detectTriggersMutation.mutate(data);
+  };
+
+  const handleTriggerToggle = (triggerId: string) => {
+    setTriggers(prev =>
+      prev.map(t =>
+        t.id === triggerId ? { ...t, selected: !t.selected } : t
+      )
+    );
+  };
+
+  const handleClearTriggers = () => {
+    setTriggers([]);
+    setProspectSummary("");
+    setShowTriggers(false);
+  };
+
   const handleCopy = async () => {
     if (!generatedEmail) return;
     const fullEmail = `Subject: ${generatedEmail.subject}\n\n${generatedEmail.body}`;
@@ -171,6 +265,8 @@ export function SingleEmailForm() {
   };
 
   const isGenerating = generateMutation.isPending;
+  const isDetecting = detectTriggersMutation.isPending;
+  const selectedTriggerCount = triggers.filter(t => t.selected).length;
 
   return (
     <div className="space-y-6">
@@ -344,23 +440,147 @@ export function SingleEmailForm() {
                 )}
               />
 
-              <Button type="submit" disabled={isGenerating} className="w-full" data-testid="button-generate">
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Generate Email
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDetectTriggers}
+                  disabled={isDetecting || isGenerating}
+                  className="flex-1"
+                  data-testid="button-detect-triggers"
+                >
+                  {isDetecting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Finding Triggers...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4 mr-2" />
+                      Find Triggers
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={isGenerating || isDetecting} 
+                  className="flex-1" 
+                  data-testid="button-generate"
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Generate Email
+                      {selectedTriggerCount > 0 && (
+                        <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs">
+                          +{selectedTriggerCount}
+                        </Badge>
+                      )}
+                    </>
+                  )}
+                </Button>
+              </div>
             </form>
           </Form>
         </CardContent>
       </Card>
+
+      {triggers.length > 0 && (
+        <Collapsible open={showTriggers} onOpenChange={setShowTriggers}>
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CollapsibleTrigger asChild>
+                  <div className="flex items-center gap-2 cursor-pointer hover:opacity-80">
+                    <CardTitle className="text-lg font-medium">
+                      Detected Triggers
+                    </CardTitle>
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedTriggerCount}/{triggers.length} selected
+                    </Badge>
+                  </div>
+                </CollapsibleTrigger>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearTriggers}
+                  data-testid="button-clear-triggers"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              {prospectSummary && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  {prospectSummary}
+                </p>
+              )}
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="pt-0 space-y-3">
+                {triggers.map((trigger) => {
+                  const config = triggerTypeConfig[trigger.type];
+                  const IconComponent = config.icon;
+                  return (
+                    <div
+                      key={trigger.id}
+                      className={`p-3 rounded-lg border transition-colors cursor-pointer ${
+                        trigger.selected 
+                          ? "border-primary/50 bg-primary/5" 
+                          : "border-border/50 hover:border-border"
+                      }`}
+                      onClick={() => handleTriggerToggle(trigger.id)}
+                      data-testid={`trigger-item-${trigger.id}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={trigger.selected}
+                          onCheckedChange={() => handleTriggerToggle(trigger.id)}
+                          className="mt-0.5"
+                          data-testid={`checkbox-trigger-${trigger.id}`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <Badge 
+                              variant="outline" 
+                              className={`text-xs ${relevanceColors[trigger.relevance]}`}
+                            >
+                              <IconComponent className="w-3 h-3 mr-1" />
+                              {config.label}
+                            </Badge>
+                            <Badge 
+                              variant="outline" 
+                              className={`text-xs capitalize ${relevanceColors[trigger.relevance]}`}
+                            >
+                              {trigger.relevance}
+                            </Badge>
+                            {trigger.date && (
+                              <span className="text-xs text-muted-foreground">
+                                {trigger.date}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-sm font-medium mb-1">{trigger.title}</h4>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            {trigger.description}
+                          </p>
+                          <p className="text-xs text-muted-foreground/70 mt-1">
+                            Source: {trigger.source}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+      )}
 
       {generatedEmail && (
         <Card className="border-border/50">
