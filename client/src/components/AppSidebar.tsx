@@ -34,17 +34,17 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="p-4 border-b border-sidebar-border">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-primary">
-            <Zap className="w-5 h-5 text-primary-foreground" />
+      <SidebarHeader className="px-4 py-5">
+        <Link href="/" className="flex items-center gap-2.5">
+          <div className="flex items-center justify-center w-7 h-7 rounded bg-primary">
+            <Zap className="w-4 h-4 text-primary-foreground" />
           </div>
-          <span className="text-lg font-semibold text-sidebar-foreground">
+          <span className="text-base font-medium tracking-tight">
             Basho Studio
           </span>
         </Link>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="px-2">
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -55,11 +55,12 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       asChild
                       isActive={isActive}
+                      className="h-9"
                       data-testid={`nav-${item.title.toLowerCase().replace(/\s/g, "-")}`}
                     >
                       <Link href={item.url}>
                         <item.icon className="w-4 h-4" />
-                        <span>{item.title}</span>
+                        <span className="text-sm">{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

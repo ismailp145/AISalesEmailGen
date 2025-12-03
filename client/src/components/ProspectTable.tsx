@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Table,
   TableBody,
@@ -65,16 +64,16 @@ export function ProspectTable({
 
   const getPreview = (prospect: Prospect) => {
     if (!prospect.generatedEmail) return null;
-    const preview = prospect.generatedEmail.body.slice(0, 80);
-    return preview + (prospect.generatedEmail.body.length > 80 ? "..." : "");
+    const preview = prospect.generatedEmail.body.slice(0, 60);
+    return preview + (prospect.generatedEmail.body.length > 60 ? "..." : "");
   };
 
   return (
-    <div className="rounded-md border border-border overflow-hidden">
+    <div className="rounded-md border border-border/50 overflow-hidden">
       <Table>
         <TableHeader>
-          <TableRow className="bg-muted/30">
-            <TableHead className="w-12">
+          <TableRow className="bg-secondary/30 border-border/50">
+            <TableHead className="w-10">
               <Checkbox
                 checked={allSelected}
                 ref={(el) => {
@@ -84,13 +83,12 @@ export function ProspectTable({
                 data-testid="checkbox-select-all"
               />
             </TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead className="hidden md:table-cell">Title</TableHead>
-            <TableHead className="hidden lg:table-cell">Company</TableHead>
-            <TableHead className="hidden xl:table-cell">Email</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="hidden md:table-cell">Preview</TableHead>
-            <TableHead className="w-20">Actions</TableHead>
+            <TableHead className="text-xs font-medium">Name</TableHead>
+            <TableHead className="text-xs font-medium hidden md:table-cell">Title</TableHead>
+            <TableHead className="text-xs font-medium hidden lg:table-cell">Company</TableHead>
+            <TableHead className="text-xs font-medium">Status</TableHead>
+            <TableHead className="text-xs font-medium hidden md:table-cell">Preview</TableHead>
+            <TableHead className="w-16"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -98,6 +96,7 @@ export function ProspectTable({
             <TableRow
               key={prospect.id}
               className={cn(
+                "border-border/50",
                 selectedIds.has(prospect.id) && "bg-primary/5"
               )}
             >
@@ -109,50 +108,49 @@ export function ProspectTable({
                 />
               </TableCell>
               <TableCell>
-                <div className="font-medium">
+                <div className="text-sm font-medium">
                   {prospect.firstName} {prospect.lastName}
                 </div>
-                <div className="text-sm text-muted-foreground md:hidden">
-                  {prospect.title} at {prospect.company}
+                <div className="text-xs text-muted-foreground md:hidden">
+                  {prospect.title}
                 </div>
               </TableCell>
-              <TableCell className="hidden md:table-cell text-muted-foreground">
+              <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                 {prospect.title}
               </TableCell>
-              <TableCell className="hidden lg:table-cell text-muted-foreground">
+              <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                 {prospect.company}
-              </TableCell>
-              <TableCell className="hidden xl:table-cell">
-                <span className="text-muted-foreground">{prospect.email}</span>
               </TableCell>
               <TableCell>
                 <StatusBadge status={prospect.status} />
               </TableCell>
               <TableCell className="hidden md:table-cell">
                 {prospect.generatedEmail ? (
-                  <span className="text-sm text-muted-foreground line-clamp-1">
+                  <span className="text-xs text-muted-foreground line-clamp-1">
                     {getPreview(prospect)}
                   </span>
                 ) : (
-                  <span className="text-sm text-muted-foreground/50">—</span>
+                  <span className="text-xs text-muted-foreground/40">—</span>
                 )}
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5">
                   {prospect.generatedEmail && (
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="w-7 h-7"
                       onClick={() => onViewEmail(prospect)}
                       data-testid={`button-view-email-${prospect.id}`}
                     >
-                      <Eye className="w-4 h-4" />
+                      <Eye className="w-3.5 h-3.5" />
                     </Button>
                   )}
                   {prospect.linkedinUrl && (
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="w-7 h-7"
                       asChild
                     >
                       <a
@@ -161,7 +159,7 @@ export function ProspectTable({
                         rel="noopener noreferrer"
                         data-testid={`link-linkedin-${prospect.id}`}
                       >
-                        <ExternalLink className="w-4 h-4" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </Button>
                   )}
@@ -171,8 +169,8 @@ export function ProspectTable({
           ))}
           {prospects.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
-                No prospects yet. Upload a CSV file to get started.
+              <TableCell colSpan={7} className="h-24 text-center text-sm text-muted-foreground">
+                No prospects yet. Upload a CSV to get started.
               </TableCell>
             </TableRow>
           )}

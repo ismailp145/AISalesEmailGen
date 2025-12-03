@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { RefreshCw, Save, X, Copy, Check } from "lucide-react";
+import { RefreshCw, Save, Copy, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface EmailData {
@@ -52,8 +52,8 @@ export function EmailPreviewModal({
   const handleSave = () => {
     onSave({ subject, body });
     toast({
-      title: "Email saved",
-      description: "Your changes have been saved successfully.",
+      title: "Saved",
+      description: "Changes saved.",
     });
     onOpenChange(false);
   };
@@ -64,78 +64,72 @@ export function EmailPreviewModal({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
     toast({
-      title: "Copied to clipboard",
-      description: "The email has been copied to your clipboard.",
+      title: "Copied",
+      description: "Email copied to clipboard.",
     });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            Email Preview
+          <DialogTitle className="text-base font-medium">
+            Edit Email
             {prospectName && (
-              <span className="text-muted-foreground font-normal">
+              <span className="text-muted-foreground font-normal ml-2">
                 for {prospectName}
               </span>
             )}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="subject">Subject Line</Label>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="subject" className="text-xs text-muted-foreground">Subject</Label>
             <Input
               id="subject"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="Email subject..."
+              className="h-9"
               data-testid="input-email-subject"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="body">Email Body</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="body" className="text-xs text-muted-foreground">Body</Label>
             <Textarea
               id="body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder="Email body..."
-              className="min-h-[300px] font-mono text-sm resize-none"
+              className="min-h-[280px] font-mono text-sm resize-none"
               data-testid="textarea-email-body"
             />
           </div>
         </div>
-        <DialogFooter className="flex-wrap gap-2">
+        <DialogFooter className="gap-2">
           <div className="flex gap-2 mr-auto">
             <Button
-              variant="outline"
+              variant="ghost"
+              size="sm"
               onClick={onRegenerate}
               disabled={isRegenerating}
               data-testid="button-regenerate"
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isRegenerating ? "animate-spin" : ""}`} />
-              Regenerate
+              <RefreshCw className={`w-4 h-4 ${isRegenerating ? "animate-spin" : ""}`} />
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
+              size="sm"
               onClick={handleCopy}
               data-testid="button-copy-email"
             >
-              {copied ? (
-                <Check className="w-4 h-4 mr-2" />
-              ) : (
-                <Copy className="w-4 h-4 mr-2" />
-              )}
-              {copied ? "Copied!" : "Copy"}
+              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
             </Button>
           </div>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} data-testid="button-cancel">
-            <X className="w-4 h-4 mr-2" />
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} data-testid="button-cancel">
             Cancel
           </Button>
-          <Button onClick={handleSave} data-testid="button-save-email">
+          <Button size="sm" onClick={handleSave} data-testid="button-save-email">
             <Save className="w-4 h-4 mr-2" />
-            Save Changes
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>

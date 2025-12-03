@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { Sparkles, Send, Loader2, Download } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileDropzone } from "@/components/FileDropzone";
 import { ProspectTable, type Prospect } from "@/components/ProspectTable";
@@ -53,7 +53,7 @@ export default function BulkCampaignsPage() {
     setProspects(newProspects);
     toast({
       title: "CSV imported",
-      description: `${newProspects.length} prospects loaded successfully.`,
+      description: `${newProspects.length} prospects loaded.`,
     });
   }, [toast]);
 
@@ -78,7 +78,7 @@ export default function BulkCampaignsPage() {
                 status: "ready" as const,
                 generatedEmail: {
                   subject: `Quick question about ${p.company}'s growth`,
-                  body: `Hi ${p.firstName},\n\nNoticed you're the ${p.title} at ${p.company}. With rapid changes in your industry, I imagine optimizing your team's productivity is a top priority.\n\nWe help leaders like you achieve 40% better results through AI-powered outreach.\n\nWould you be open to a quick 15-minute call this week? I have availability Tuesday at 2pm or Thursday at 10am.\n\nBest,\nAlex`,
+                  body: `Hi ${p.firstName},\n\nNoticed you're the ${p.title} at ${p.company}. With rapid changes in your industry, I imagine optimizing your team's productivity is a top priority.\n\nWe help leaders like you achieve 40% better results through AI-powered outreach.\n\nWould you be open to a quick 15-minute call this week? I'm free Tuesday at 2pm or Thursday at 10am.\n\nBest,\nAlex`,
                 },
               }
             : p
@@ -88,16 +88,16 @@ export default function BulkCampaignsPage() {
     
     setIsGenerating(false);
     toast({
-      title: "Emails generated",
-      description: `Generated emails for ${prospects.length} prospects.`,
+      title: "Complete",
+      description: `Generated ${prospects.length} emails.`,
     });
   };
 
   const handleSendSelected = async () => {
     if (selectedIds.size === 0) {
       toast({
-        title: "No prospects selected",
-        description: "Please select at least one prospect to send emails.",
+        title: "No selection",
+        description: "Select at least one prospect.",
         variant: "destructive",
       });
       return;
@@ -110,7 +110,7 @@ export default function BulkCampaignsPage() {
     if (readyProspects.length === 0) {
       toast({
         title: "No ready emails",
-        description: "Selected prospects don't have generated emails yet.",
+        description: "Selected prospects don't have generated emails.",
         variant: "destructive",
       });
       return;
@@ -131,8 +131,8 @@ export default function BulkCampaignsPage() {
     setIsSending(false);
     setSelectedIds(new Set());
     toast({
-      title: "Emails sent",
-      description: `Successfully sent ${readyProspects.length} emails.`,
+      title: "Sent",
+      description: `${readyProspects.length} emails delivered.`,
     });
   };
 
@@ -204,23 +204,20 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Bulk Campaigns</h1>
-          <p className="text-muted-foreground mt-1">
-            Upload a CSV file to generate emails for multiple prospects at once
+          <h1 className="text-xl font-medium tracking-tight">Bulk Campaigns</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Upload a CSV to generate emails for multiple prospects
           </p>
         </div>
-        <Button variant="outline" onClick={downloadSampleCSV} data-testid="button-download-sample">
+        <Button variant="ghost" size="sm" onClick={downloadSampleCSV} data-testid="button-download-sample">
           <Download className="w-4 h-4 mr-2" />
           Sample CSV
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Upload Prospects</CardTitle>
-          <CardDescription>
-            Upload a CSV file with your prospect data
-          </CardDescription>
+      <Card className="border-border/50">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg font-medium">Upload Prospects</CardTitle>
         </CardHeader>
         <CardContent>
           <FileDropzone onFileSelect={handleFileSelect} />
@@ -228,20 +225,21 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
       </Card>
 
       {prospects.length > 0 && (
-        <Card>
-          <CardHeader>
+        <Card className="border-border/50">
+          <CardHeader className="pb-4">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
-                <CardTitle>
-                  Prospects ({prospects.length})
+                <CardTitle className="text-lg font-medium">
+                  Prospects
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">
+                    {prospects.length} total · {readyCount} ready · {selectedIds.size} selected
+                  </span>
                 </CardTitle>
-                <CardDescription>
-                  {readyCount} emails ready • {selectedIds.size} selected
-                </CardDescription>
               </div>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2">
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={handleGenerateAll}
                   disabled={isGenerating || prospects.every((p) => p.status !== "pending")}
                   data-testid="button-generate-all"
@@ -254,26 +252,22 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 mr-2" />
-                      Generate for All
+                      Generate All
                     </>
                   )}
                 </Button>
                 <Button
+                  size="sm"
                   onClick={handleSendSelected}
                   disabled={isSending || selectedReadyCount === 0}
                   data-testid="button-send-selected"
                 >
                   {isSending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Sending...
-                    </>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
-                    <>
-                      <Send className="w-4 h-4 mr-2" />
-                      Send Selected ({selectedReadyCount})
-                    </>
+                    <Send className="w-4 h-4 mr-2" />
                   )}
+                  Send ({selectedReadyCount})
                 </Button>
               </div>
             </div>

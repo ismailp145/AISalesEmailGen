@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2, Sparkles, Copy, Send, RefreshCw, Check } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,12 +26,12 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 const formSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  company: z.string().min(1, "Company is required"),
-  title: z.string().min(1, "Title is required"),
-  email: z.string().email("Invalid email address"),
-  linkedinUrl: z.string().url("Invalid LinkedIn URL").optional().or(z.literal("")),
+  firstName: z.string().min(1, "Required"),
+  lastName: z.string().min(1, "Required"),
+  company: z.string().min(1, "Required"),
+  title: z.string().min(1, "Required"),
+  email: z.string().email("Invalid email"),
+  linkedinUrl: z.string().url("Invalid URL").optional().or(z.literal("")),
   notes: z.string().optional(),
   tone: z.enum(["casual", "professional", "hyper-personal"]),
   length: z.enum(["short", "medium"]),
@@ -84,9 +84,7 @@ We help sales teams like yours generate highly personalized outreach at scale, c
 Would you be open to a quick 15-minute call this week to explore if this could help ${data.company}? I have availability Tuesday at 2pm or Thursday at 10am.
 
 Best regards,
-Alex
-
-P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss this further.` : "Looking forward to connecting!"}`,
+Alex${data.notes ? `\n\nP.S. Regarding "${data.notes}" - I'd love to discuss this further.` : ""}`,
     };
     
     setGeneratedEmail(mockEmail);
@@ -104,8 +102,8 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
     toast({
-      title: "Copied to clipboard",
-      description: "The email has been copied to your clipboard.",
+      title: "Copied",
+      description: "Email copied to clipboard.",
     });
   };
 
@@ -116,7 +114,7 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
     setIsSending(false);
     toast({
       title: "Email sent",
-      description: `Email sent to ${form.getValues("email")}`,
+      description: `Sent to ${form.getValues("email")}`,
     });
   };
 
@@ -126,25 +124,22 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Generate Single Email</CardTitle>
-          <CardDescription>
-            Enter prospect details to generate a personalized Basho-style email
-          </CardDescription>
+      <Card className="border-border/50">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg font-medium">Prospect Details</CardTitle>
         </CardHeader>
         <CardContent>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="firstName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>First Name</FormLabel>
+                      <FormLabel className="text-xs text-muted-foreground">First Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Sarah" {...field} data-testid="input-first-name" />
+                        <Input placeholder="Sarah" className="h-9" {...field} data-testid="input-first-name" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -155,9 +150,9 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                   name="lastName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Last Name</FormLabel>
+                      <FormLabel className="text-xs text-muted-foreground">Last Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Johnson" {...field} data-testid="input-last-name" />
+                        <Input placeholder="Johnson" className="h-9" {...field} data-testid="input-last-name" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -165,15 +160,15 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="company"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Company</FormLabel>
+                      <FormLabel className="text-xs text-muted-foreground">Company</FormLabel>
                       <FormControl>
-                        <Input placeholder="Acme Corp" {...field} data-testid="input-company" />
+                        <Input placeholder="Acme Corp" className="h-9" {...field} data-testid="input-company" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -184,9 +179,9 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                   name="title"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Title</FormLabel>
+                      <FormLabel className="text-xs text-muted-foreground">Title</FormLabel>
                       <FormControl>
-                        <Input placeholder="VP of Sales" {...field} data-testid="input-title" />
+                        <Input placeholder="VP of Sales" className="h-9" {...field} data-testid="input-title" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -194,17 +189,18 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email</FormLabel>
+                      <FormLabel className="text-xs text-muted-foreground">Email</FormLabel>
                       <FormControl>
                         <Input 
                           type="email" 
                           placeholder="sarah@acme.com" 
+                          className="h-9"
                           {...field} 
                           data-testid="input-email" 
                         />
@@ -218,10 +214,11 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                   name="linkedinUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>LinkedIn URL (optional)</FormLabel>
+                      <FormLabel className="text-xs text-muted-foreground">LinkedIn URL</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="https://linkedin.com/in/sarahjohnson" 
+                          placeholder="linkedin.com/in/sarah" 
+                          className="h-9"
                           {...field} 
                           data-testid="input-linkedin" 
                         />
@@ -232,16 +229,16 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="tone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Tone</FormLabel>
+                      <FormLabel className="text-xs text-muted-foreground">Tone</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
-                          <SelectTrigger data-testid="select-tone">
+                          <SelectTrigger className="h-9" data-testid="select-tone">
                             <SelectValue placeholder="Select tone" />
                           </SelectTrigger>
                         </FormControl>
@@ -260,10 +257,10 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                   name="length"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Length</FormLabel>
+                      <FormLabel className="text-xs text-muted-foreground">Length</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
-                          <SelectTrigger data-testid="select-length">
+                          <SelectTrigger className="h-9" data-testid="select-length">
                             <SelectValue placeholder="Select length" />
                           </SelectTrigger>
                         </FormControl>
@@ -283,11 +280,11 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Additional Context (optional)</FormLabel>
+                    <FormLabel className="text-xs text-muted-foreground">Context (optional)</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Any specific context or talking points to include..."
-                        className="resize-none"
+                        placeholder="Any talking points or context..."
+                        className="resize-none min-h-[80px]"
                         {...field}
                         data-testid="textarea-notes"
                       />
@@ -306,7 +303,7 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 mr-2" />
-                    Generate Basho Email
+                    Generate Email
                   </>
                 )}
               </Button>
@@ -316,33 +313,27 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
       </Card>
 
       {generatedEmail && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between flex-wrap gap-3">
-              <span>Generated Email</span>
+        <Card className="border-border/50">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <CardTitle className="text-lg font-medium">Generated Email</CardTitle>
               <div className="flex gap-2">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={handleRegenerate}
                   disabled={isGenerating}
                   data-testid="button-regenerate"
                 >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${isGenerating ? "animate-spin" : ""}`} />
-                  Regenerate
+                  <RefreshCw className={`w-4 h-4 ${isGenerating ? "animate-spin" : ""}`} />
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={handleCopy}
                   data-testid="button-copy"
                 >
-                  {copied ? (
-                    <Check className="w-4 h-4 mr-2" />
-                  ) : (
-                    <Copy className="w-4 h-4 mr-2" />
-                  )}
-                  {copied ? "Copied!" : "Copy"}
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 </Button>
                 <Button
                   size="sm"
@@ -351,26 +342,28 @@ P.S. ${data.notes ? `Regarding your note: "${data.notes}" - I'd love to discuss 
                   data-testid="button-send"
                 >
                   {isSending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Send className="w-4 h-4 mr-2" />
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      Send
+                    </>
                   )}
-                  Send Email
                 </Button>
               </div>
-            </CardTitle>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-muted-foreground text-sm">Subject Line</Label>
-              <div className="p-3 rounded-md bg-muted/50 font-medium" data-testid="text-generated-subject">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Subject</Label>
+              <div className="text-sm font-medium" data-testid="text-generated-subject">
                 {generatedEmail.subject}
               </div>
             </div>
-            <div className="space-y-2">
-              <Label className="text-muted-foreground text-sm">Email Body</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Body</Label>
               <div 
-                className="p-4 rounded-md bg-muted/50 font-mono text-sm whitespace-pre-wrap leading-relaxed"
+                className="p-4 rounded-md bg-secondary/50 font-mono text-sm whitespace-pre-wrap leading-relaxed"
                 data-testid="text-generated-body"
               >
                 {generatedEmail.body}

@@ -12,7 +12,7 @@ const statusConfig: Record<ProspectStatus, { label: string; icon: typeof Clock; 
   pending: {
     label: "Pending",
     icon: Clock,
-    className: "bg-muted text-muted-foreground border-muted-border",
+    className: "bg-transparent text-muted-foreground border-border",
   },
   generating: {
     label: "Generating",
@@ -27,7 +27,7 @@ const statusConfig: Record<ProspectStatus, { label: string; icon: typeof Clock; 
   sent: {
     label: "Sent",
     icon: Send,
-    className: "bg-emerald-500/5 text-emerald-300 border-emerald-500/10",
+    className: "bg-emerald-500/5 text-emerald-400/70 border-emerald-500/10",
   },
   error: {
     label: "Error",
@@ -43,7 +43,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
   return (
     <Badge
       variant="outline"
-      className={cn("gap-1.5 font-medium", config.className)}
+      className={cn("gap-1 text-[11px] font-medium", config.className)}
       data-testid={`badge-status-${status}`}
     >
       <Icon className={cn("w-3 h-3", status === "generating" && "animate-spin")} />
