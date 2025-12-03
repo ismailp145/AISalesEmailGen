@@ -17,10 +17,10 @@ import type { SequenceRecord, SequenceWithSteps, SequenceStepApi, ProspectRecord
 type SequenceStatus = "draft" | "active" | "paused" | "archived";
 
 const statusColors: Record<SequenceStatus, string> = {
-  draft: "bg-muted text-muted-foreground",
-  active: "bg-primary/20 text-primary",
-  paused: "bg-muted text-muted-foreground border border-primary/30",
-  archived: "bg-muted text-muted-foreground opacity-60",
+  draft: "bg-muted/60 text-muted-foreground border border-border/50",
+  active: "bg-primary/10 text-primary border border-primary/20",
+  paused: "bg-muted/40 text-muted-foreground border border-border/40",
+  archived: "bg-muted/30 text-muted-foreground/70 border border-border/30",
 };
 
 const statusLabels: Record<SequenceStatus, string> = {
