@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { generateEmail, generateEmailsBatch } from "./openai";
+import { generateEmail, generateEmailsBatch, detectTriggers } from "./openai";
 import { sendEmail, isSendGridConfigured, initSendGrid } from "./sendgrid";
 import { createHubSpotService } from "./hubspot";
 import { storage } from "./storage";
@@ -11,6 +11,7 @@ import {
   createSequenceRequestSchema,
   updateSequenceRequestSchema,
   enrollProspectsRequestSchema,
+  detectTriggersRequestSchema,
   type CrmProvider,
   type SequenceStatus,
   type EnrollmentStatus,
@@ -74,8 +75,8 @@ export async function registerRoutes(
         });
       }
 
-      const { prospect, tone, length } = parsed.data;
-      const email = await generateEmail({ prospect, tone, length });
+      const { prospect, tone, length, triggers } = parsed.data;
+      const email = await generateEmail({ prospect, tone, length, triggers });
       
       return res.json(email);
     } catch (error: any) {
@@ -93,6 +94,40 @@ export async function registerRoutes(
       
       return res.status(500).json({ 
         error: "Failed to generate email",
+        message: error?.message || "An unexpected error occurred. Please try again."
+      });
+    }
+  });
+
+  // Detect triggers for a prospect
+  app.post("/api/detect-triggers", async (req, res) => {
+    try {
+      const aiStatus = checkAIIntegration();
+      if (!aiStatus.configured) {
+        return res.status(503).json({
+          error: "Service unavailable",
+          message: aiStatus.message,
+        });
+      }
+
+      const parsed = detectTriggersRequestSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ 
+          error: "Invalid request", 
+          details: parsed.error.flatten() 
+        });
+      }
+
+      const { prospect } = parsed.data;
+      const result = await detectTriggers(prospect);
+      
+      return res.json(result);
+    } catch (error: any) {
+      console.error("Trigger detection error:", error);
+      
+      return res.status(500).json({ 
+        error: "Failed to detect triggers",
         message: error?.message || "An unexpected error occurred. Please try again."
       });
     }

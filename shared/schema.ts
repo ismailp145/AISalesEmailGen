@@ -280,11 +280,24 @@ export const prospectSchema = z.object({
 
 export type Prospect = z.infer<typeof prospectSchema>;
 
+// Detected trigger schema for API
+export const detectedTriggerSchema = z.object({
+  id: z.string(),
+  type: z.enum(["news", "linkedin", "company_event", "industry_trend", "job_change", "funding"]),
+  title: z.string(),
+  description: z.string(),
+  relevance: z.enum(["high", "medium", "low"]),
+  source: z.string(),
+  date: z.string().optional(),
+  selected: z.boolean().optional(),
+});
+
 // Email generation request schema
 export const generateEmailRequestSchema = z.object({
   prospect: prospectSchema,
   tone: z.enum(["casual", "professional", "hyper-personal"]).default("professional"),
   length: z.enum(["short", "medium"]).default("medium"),
+  triggers: z.array(detectedTriggerSchema).optional(),
 });
 
 export type GenerateEmailRequest = z.infer<typeof generateEmailRequestSchema>;
