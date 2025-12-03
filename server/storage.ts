@@ -1,11 +1,15 @@
 import { randomUUID } from "crypto";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, lte, inArray } from "drizzle-orm";
 import { db } from "./db";
 import {
   userProfiles,
   prospects,
   emailActivities,
   crmConnections,
+  sequences,
+  sequenceSteps,
+  sequenceEnrollments,
+  scheduledEmails,
   type UserProfile,
   type Prospect,
   type ProspectWithStatus,
@@ -14,6 +18,19 @@ import {
   type CrmConnection,
   type ProspectRecord,
   type InsertProspect,
+  type SequenceRecord,
+  type SequenceStepRecord,
+  type SequenceEnrollmentRecord,
+  type ScheduledEmailRecord,
+  type InsertSequence,
+  type InsertSequenceStep,
+  type InsertSequenceEnrollment,
+  type InsertScheduledEmail,
+  type SequenceWithSteps,
+  type EnrollmentWithProspect,
+  type CreateSequenceRequest,
+  type SequenceStatus,
+  type EnrollmentStatus,
   defaultUserProfile,
 } from "@shared/schema";
 
@@ -50,6 +67,34 @@ export interface IStorage {
   saveProspects(prospects: InsertProspect[]): Promise<ProspectRecord[]>;
   getProspectsByCrmSource(source: CrmProvider): Promise<ProspectRecord[]>;
   getAllProspects(): Promise<ProspectRecord[]>;
+  
+  // Sequence operations
+  createSequence(data: CreateSequenceRequest): Promise<SequenceWithSteps>;
+  getSequence(id: number): Promise<SequenceWithSteps | null>;
+  getAllSequences(): Promise<SequenceRecord[]>;
+  updateSequence(id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null>;
+  updateSequenceStatus(id: number, status: SequenceStatus): Promise<SequenceRecord | null>;
+  deleteSequence(id: number): Promise<boolean>;
+  
+  // Sequence step operations
+  getSequenceSteps(sequenceId: number): Promise<SequenceStepRecord[]>;
+  updateSequenceSteps(sequenceId: number, steps: InsertSequenceStep[]): Promise<SequenceStepRecord[]>;
+  
+  // Enrollment operations
+  enrollProspects(sequenceId: number, prospectIds: number[]): Promise<SequenceEnrollmentRecord[]>;
+  getEnrollments(sequenceId: number): Promise<EnrollmentWithProspect[]>;
+  getEnrollmentsByProspect(prospectId: number): Promise<SequenceEnrollmentRecord[]>;
+  updateEnrollmentStatus(enrollmentId: number, status: EnrollmentStatus): Promise<SequenceEnrollmentRecord | null>;
+  markAsReplied(enrollmentId: number): Promise<void>;
+  pauseEnrollment(enrollmentId: number): Promise<void>;
+  resumeEnrollment(enrollmentId: number): Promise<void>;
+  
+  // Scheduled email operations
+  getScheduledEmails(enrollmentId: number): Promise<ScheduledEmailRecord[]>;
+  getDueEmails(): Promise<ScheduledEmailRecord[]>;
+  createScheduledEmail(data: InsertScheduledEmail): Promise<ScheduledEmailRecord>;
+  updateScheduledEmailStatus(id: number, status: string, error?: string): Promise<void>;
+  cancelScheduledEmails(enrollmentId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -278,6 +323,260 @@ export class DatabaseStorage implements IStorage {
     return db.select()
       .from(prospects)
       .orderBy(desc(prospects.createdAt));
+  }
+
+  // ============================================
+  // Sequence Operations
+  // ============================================
+
+  async createSequence(data: CreateSequenceRequest): Promise<SequenceWithSteps> {
+    const [sequence] = await db.insert(sequences)
+      .values({
+        name: data.name,
+        description: data.description || null,
+        tone: data.tone,
+        length: data.length,
+        status: "draft",
+      })
+      .returning();
+
+    const stepsData = data.steps.map(step => ({
+      sequenceId: sequence.id,
+      stepNumber: step.stepNumber,
+      delayDays: step.delayDays,
+      sendTimeHour: step.sendTimeHour ?? 9,
+      sendTimeMinute: step.sendTimeMinute ?? 0,
+      subjectTemplate: step.subjectTemplate || null,
+      bodyTemplate: step.bodyTemplate || null,
+      isFollowUp: step.isFollowUp ?? false,
+    }));
+
+    const steps = await db.insert(sequenceSteps)
+      .values(stepsData)
+      .returning();
+
+    return { ...sequence, steps };
+  }
+
+  async getSequence(id: number): Promise<SequenceWithSteps | null> {
+    const [sequence] = await db.select()
+      .from(sequences)
+      .where(eq(sequences.id, id))
+      .limit(1);
+
+    if (!sequence) return null;
+
+    const steps = await db.select()
+      .from(sequenceSteps)
+      .where(eq(sequenceSteps.sequenceId, id))
+      .orderBy(sequenceSteps.stepNumber);
+
+    return { ...sequence, steps };
+  }
+
+  async getAllSequences(): Promise<SequenceRecord[]> {
+    return db.select()
+      .from(sequences)
+      .orderBy(desc(sequences.createdAt));
+  }
+
+  async updateSequence(id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null> {
+    const [updated] = await db.update(sequences)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(sequences.id, id))
+      .returning();
+    
+    return updated || null;
+  }
+
+  async updateSequenceStatus(id: number, status: SequenceStatus): Promise<SequenceRecord | null> {
+    const [updated] = await db.update(sequences)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(sequences.id, id))
+      .returning();
+    
+    return updated || null;
+  }
+
+  async deleteSequence(id: number): Promise<boolean> {
+    const result = await db.delete(sequences)
+      .where(eq(sequences.id, id))
+      .returning();
+    
+    return result.length > 0;
+  }
+
+  // ============================================
+  // Sequence Step Operations
+  // ============================================
+
+  async getSequenceSteps(sequenceId: number): Promise<SequenceStepRecord[]> {
+    return db.select()
+      .from(sequenceSteps)
+      .where(eq(sequenceSteps.sequenceId, sequenceId))
+      .orderBy(sequenceSteps.stepNumber);
+  }
+
+  async updateSequenceSteps(sequenceId: number, steps: InsertSequenceStep[]): Promise<SequenceStepRecord[]> {
+    await db.delete(sequenceSteps).where(eq(sequenceSteps.sequenceId, sequenceId));
+    
+    if (steps.length === 0) return [];
+    
+    const stepsData = steps.map(step => ({
+      ...step,
+      sequenceId,
+    }));
+    
+    return db.insert(sequenceSteps)
+      .values(stepsData)
+      .returning();
+  }
+
+  // ============================================
+  // Enrollment Operations
+  // ============================================
+
+  async enrollProspects(sequenceId: number, prospectIds: number[]): Promise<SequenceEnrollmentRecord[]> {
+    const enrollments = prospectIds.map(prospectId => ({
+      sequenceId,
+      prospectId,
+      status: "active" as const,
+      currentStepNumber: 0,
+      nextSendAt: null,
+    }));
+
+    const inserted = await db.insert(sequenceEnrollments)
+      .values(enrollments)
+      .returning();
+
+    await db.update(sequences)
+      .set({ 
+        totalEnrolled: db.select().from(sequenceEnrollments)
+          .where(eq(sequenceEnrollments.sequenceId, sequenceId))
+          .$dynamic() as any
+      })
+      .where(eq(sequences.id, sequenceId));
+
+    return inserted;
+  }
+
+  async getEnrollments(sequenceId: number): Promise<EnrollmentWithProspect[]> {
+    const enrollmentsList = await db.select()
+      .from(sequenceEnrollments)
+      .where(eq(sequenceEnrollments.sequenceId, sequenceId))
+      .orderBy(desc(sequenceEnrollments.enrolledAt));
+
+    const result: EnrollmentWithProspect[] = [];
+    
+    for (const enrollment of enrollmentsList) {
+      const [prospect] = await db.select()
+        .from(prospects)
+        .where(eq(prospects.id, enrollment.prospectId))
+        .limit(1);
+      
+      if (prospect) {
+        result.push({ ...enrollment, prospect });
+      }
+    }
+
+    return result;
+  }
+
+  async getEnrollmentsByProspect(prospectId: number): Promise<SequenceEnrollmentRecord[]> {
+    return db.select()
+      .from(sequenceEnrollments)
+      .where(eq(sequenceEnrollments.prospectId, prospectId))
+      .orderBy(desc(sequenceEnrollments.enrolledAt));
+  }
+
+  async updateEnrollmentStatus(enrollmentId: number, status: EnrollmentStatus): Promise<SequenceEnrollmentRecord | null> {
+    const updateData: any = { status, lastActivityAt: new Date() };
+    
+    if (status === "completed") {
+      updateData.completedAt = new Date();
+    } else if (status === "replied") {
+      updateData.repliedAt = new Date();
+    }
+
+    const [updated] = await db.update(sequenceEnrollments)
+      .set(updateData)
+      .where(eq(sequenceEnrollments.id, enrollmentId))
+      .returning();
+    
+    return updated || null;
+  }
+
+  async markAsReplied(enrollmentId: number): Promise<void> {
+    await this.updateEnrollmentStatus(enrollmentId, "replied");
+    
+    await db.update(scheduledEmails)
+      .set({ status: "cancelled" })
+      .where(and(
+        eq(scheduledEmails.enrollmentId, enrollmentId),
+        eq(scheduledEmails.status, "scheduled")
+      ));
+  }
+
+  async pauseEnrollment(enrollmentId: number): Promise<void> {
+    await this.updateEnrollmentStatus(enrollmentId, "paused");
+  }
+
+  async resumeEnrollment(enrollmentId: number): Promise<void> {
+    await this.updateEnrollmentStatus(enrollmentId, "active");
+  }
+
+  // ============================================
+  // Scheduled Email Operations
+  // ============================================
+
+  async getScheduledEmails(enrollmentId: number): Promise<ScheduledEmailRecord[]> {
+    return db.select()
+      .from(scheduledEmails)
+      .where(eq(scheduledEmails.enrollmentId, enrollmentId))
+      .orderBy(scheduledEmails.scheduledFor);
+  }
+
+  async getDueEmails(): Promise<ScheduledEmailRecord[]> {
+    const now = new Date();
+    return db.select()
+      .from(scheduledEmails)
+      .where(and(
+        eq(scheduledEmails.status, "scheduled"),
+        lte(scheduledEmails.scheduledFor, now)
+      ))
+      .orderBy(scheduledEmails.scheduledFor);
+  }
+
+  async createScheduledEmail(data: InsertScheduledEmail): Promise<ScheduledEmailRecord> {
+    const [email] = await db.insert(scheduledEmails)
+      .values(data)
+      .returning();
+    
+    return email;
+  }
+
+  async updateScheduledEmailStatus(id: number, status: string, error?: string): Promise<void> {
+    const updateData: any = { status };
+    
+    if (status === "sent") {
+      updateData.sentAt = new Date();
+    }
+    if (error) {
+      updateData.error = error;
+    }
+
+    await db.update(scheduledEmails)
+      .set(updateData)
+      .where(eq(scheduledEmails.id, id));
+  }
+
+  async cancelScheduledEmails(enrollmentId: number): Promise<void> {
+    await db.update(scheduledEmails)
+      .set({ status: "cancelled" })
+      .where(and(
+        eq(scheduledEmails.enrollmentId, enrollmentId),
+        eq(scheduledEmails.status, "scheduled")
+      ));
   }
 }
 
