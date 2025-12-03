@@ -1,9 +1,10 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Loader2, Link2, Unlink, RefreshCw, Check, AlertCircle, ExternalLink } from "lucide-react";
+import { Loader2, Link2, Unlink, RefreshCw, Check, AlertCircle, ExternalLink, RotateCcw } from "lucide-react";
 import { SiHubspot, SiSalesforce } from "react-icons/si";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -153,31 +154,36 @@ export default function IntegrationsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {!isHubSpotAvailable ? (
-              <div className="rounded-lg bg-muted/50 p-4 space-y-3">
+              <div className="rounded-lg bg-muted/50 p-4 space-y-4">
                 <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+                  <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">API Key Required</p>
+                    <p className="text-sm font-medium">Setup Required</p>
                     <p className="text-xs text-muted-foreground">
-                      To connect HubSpot, you need to create a Private App and add the API key.
+                      To connect HubSpot, create a Private App and add your API key to Secrets.
                     </p>
                   </div>
                 </div>
-                <div className="pl-8 space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    1. Go to your HubSpot account Settings
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    2. Navigate to Integrations → Private Apps
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    3. Create a new Private App with CRM scopes (contacts read/write)
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    4. Copy the access token and add it to Replit Secrets as <code className="px-1 py-0.5 bg-background rounded text-primary">HUBSPOT_API_KEY</code>
-                  </p>
+                
+                <Separator />
+                
+                <div className="space-y-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Step-by-step</p>
+                  <ol className="text-xs text-muted-foreground space-y-2 list-decimal list-inside">
+                    <li>Go to your HubSpot account → Settings → Integrations → Private Apps</li>
+                    <li>Create a new Private App with these scopes:
+                      <ul className="ml-5 mt-1 space-y-0.5 list-disc">
+                        <li><code className="text-[10px] px-1 py-0.5 bg-background rounded">crm.objects.contacts.read</code></li>
+                        <li><code className="text-[10px] px-1 py-0.5 bg-background rounded">crm.objects.contacts.write</code></li>
+                      </ul>
+                    </li>
+                    <li>Copy the access token</li>
+                    <li>In Replit, go to <strong>Tools → Secrets</strong></li>
+                    <li>Add a new secret: <code className="px-1 py-0.5 bg-background rounded text-primary">HUBSPOT_API_KEY</code></li>
+                  </ol>
                 </div>
-                <div className="pl-8">
+                
+                <div className="flex gap-2">
                   <Button variant="outline" size="sm" asChild>
                     <a 
                       href="https://developers.hubspot.com/docs/api/private-apps" 
@@ -186,8 +192,17 @@ export default function IntegrationsPage() {
                       data-testid="link-hubspot-docs"
                     >
                       <ExternalLink className="w-3 h-3 mr-2" />
-                      View HubSpot Docs
+                      HubSpot Docs
                     </a>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => refetch()}
+                    data-testid="button-refresh-status"
+                  >
+                    <RotateCcw className="w-3 h-3 mr-2" />
+                    I Added the Secret
                   </Button>
                 </div>
               </div>

@@ -47,6 +47,7 @@ Preferred communication style: Simple, everyday language.
 **Routing Structure:**
 - `/` - Single Email generation page
 - `/bulk` - Bulk campaign management page
+- `/integrations` - CRM integrations page (HubSpot, Salesforce, Pipedrive)
 - `/settings` - My Profile page (user/company settings for AI personalization)
 
 ### Backend Architecture

@@ -90,8 +90,8 @@ export class HubSpotService {
     }
   }
 
-  // Fetch contacts from HubSpot
-  async getContacts(limit: number = 100): Promise<InsertProspect[]> {
+  // Fetch contacts from HubSpot with pagination
+  async getContacts(maxContacts: number = 100): Promise<InsertProspect[]> {
     const properties = [
       "email",
       "firstname",
@@ -101,32 +101,46 @@ export class HubSpotService {
       "hs_linkedin_url",
     ].join(",");
 
-    const response = await this.request<HubSpotContactsResponse>(
-      `/crm/v3/objects/contacts?limit=${limit}&properties=${properties}`
-    );
-
     const prospects: InsertProspect[] = [];
-
-    for (const contact of response.results) {
-      const props = contact.properties;
+    let after: string | undefined;
+    const pageSize = Math.min(100, maxContacts); // HubSpot max is 100 per page
+    
+    // Paginate through results
+    while (prospects.length < maxContacts) {
+      const url = `/crm/v3/objects/contacts?limit=${pageSize}&properties=${properties}${after ? `&after=${after}` : ""}`;
       
-      // Skip contacts without required fields
-      if (!props.email || !props.firstname || !props.lastname) {
-        continue;
+      const response = await this.request<HubSpotContactsResponse>(url);
+
+      for (const contact of response.results) {
+        if (prospects.length >= maxContacts) break;
+        
+        const props = contact.properties;
+        
+        // Skip contacts without required fields
+        if (!props.email || !props.firstname || !props.lastname) {
+          continue;
+        }
+
+        prospects.push({
+          firstName: props.firstname,
+          lastName: props.lastname,
+          email: props.email,
+          company: props.company || "Unknown Company",
+          title: props.jobtitle || "Unknown Title",
+          linkedinUrl: props.hs_linkedin_url || null,
+          notes: null,
+          crmId: contact.id,
+          crmSource: "hubspot",
+          crmData: props,
+        });
       }
 
-      prospects.push({
-        firstName: props.firstname,
-        lastName: props.lastname,
-        email: props.email,
-        company: props.company || "Unknown Company",
-        title: props.jobtitle || "Unknown Title",
-        linkedinUrl: props.hs_linkedin_url || null,
-        notes: null,
-        crmId: contact.id,
-        crmSource: "hubspot",
-        crmData: props,
-      });
+      // Check if there are more pages
+      if (response.paging?.next?.after) {
+        after = response.paging.next.after;
+      } else {
+        break; // No more pages
+      }
     }
 
     return prospects;
