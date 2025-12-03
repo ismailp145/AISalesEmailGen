@@ -1,128 +1,209 @@
 # Design Guidelines for Basho Studio
 
-## Design Approach
-**System-Based with Custom SaaS Aesthetics**
-- Modern B2B SaaS dashboard with dark theme
-- Utility-focused productivity tool with high information density
-- Clean, professional interface prioritizing workflow efficiency
+## Design Philosophy
+**Premium AI SaaS Aesthetic** - Inspired by Linear, Vercel, and Notion
+- Sophisticated monochrome palette with subtle graphite tones
+- Minimal visual noise, maximum information clarity
+- Refined typography with tight letter-spacing
+- Subtle depth through shadows and layered surfaces
+- Professional, enterprise-grade visual language
 
 ## Color Palette
-- **Background**: `#000000` (pure black or near-black)
-- **Foreground Text**: `#FFFFFF` (white)
-- **Accent Color**: `#00D1FF` (cyan) - single highlight color for CTAs, links, and status indicators
-- **High Contrast Philosophy**: Strong contrast for readability without harshness
+
+### Primary Colors
+- **Background**: `#000000` (pure black)
+- **Foreground**: Off-white with warm ivory undertone for comfortable reading
+- **Cards/Surfaces**: Dark graphite (`hsl(220, 6%, 6%)`) with subtle blue undertone
+
+### Neutral Grays (Graphite Scale)
+- **Border**: `hsl(220, 5%, 15%)` - Subtle separation
+- **Muted**: `hsl(220, 4%, 14%)` - Background surfaces
+- **Muted Foreground**: `hsl(220, 5%, 50%)` - Secondary text
+
+### Interactive States
+- **Primary**: Off-white/porcelain (`hsl(0, 0%, 90%)`) - CTAs and key actions
+- **Secondary**: Dark graphite (`hsl(220, 5%, 11%)`) - Secondary buttons
+- **Accent**: Lighter graphite (`hsl(220, 4%, 12%)`) - Hover states
+
+### Status Colors (Monochrome-Based)
+- **Draft**: Muted gray background with muted text
+- **Active**: Primary/10 background with primary text and subtle border
+- **Paused**: Muted gray, slightly transparent
+- **Archived**: Muted gray with reduced opacity
+- **Error/Destructive**: Red (`hsl(0, 72%, 51%)`) - Only color accent
 
 ## Typography System
-- Modern sans-serif system fonts for optimal legibility
-- **Hierarchy**:
-  - Headings: Bold weights (600-700) for section headers
-  - Body: Regular weight (400) for content
-  - UI Elements: Medium weight (500) for buttons and labels
-- Generous line-height for dashboard readability (1.6-1.8 for body text)
 
-## Layout & Spacing
-**Core Layout Structure**:
-- Left sidebar navigation (fixed width ~240px)
-- Top bar (height ~64px) with environment badge and user avatar
-- Main content area with max-width constraints for forms (max-w-4xl)
-- Tailwind spacing units: Primarily `p-4`, `p-6`, `p-8`, `m-4`, `gap-4`, `gap-6`
+### Font Family
+- **Primary**: Inter, -apple-system, BlinkMacSystemFont
+- **Monospace**: SF Mono, Menlo
 
-**Whitespace Strategy**:
-- Generous padding within cards and containers
-- Clear visual separation between sections
-- Breathing room around interactive elements
+### Typography Scale
+- **H1**: 28-32px, semibold (600), letter-spacing: -0.02em
+- **H2**: 22-24px, semibold (600), letter-spacing: -0.02em
+- **H3**: 18-20px, semibold (600), letter-spacing: -0.02em
+- **Body**: 14-16px, regular (400), letter-spacing: -0.01em
+- **Small/Labels**: 12-13px, medium (500), letter-spacing: -0.01em
 
-## Component Library
+### Reading Comfort
+- Line height: 1.5-1.6 for body text
+- Maximum content width for readability
+- Consistent vertical rhythm
 
-**Navigation Sidebar**:
-- App logo/name: "Basho Studio" at top
-- Navigation items: "Single Email", "Bulk Campaigns", "Settings"
-- Dark background with subtle hover states
+## Spacing System
 
-**Top Bar**:
-- Environment indicator badge ("Sandbox" chip)
-- User avatar placeholder (right-aligned)
+### Scale
+- **xs**: 8px
+- **sm**: 12px
+- **md**: 16px
+- **lg**: 20px
+- **xl**: 24px
+- **2xl**: 32px
 
-**Cards & Containers**:
-- Rounded corners (`rounded-lg` or `rounded-xl`)
-- Soft drop shadows for depth
-- Dark card backgrounds with subtle border treatment
+### Application
+- Card padding: 16-20px (md-lg)
+- Section gaps: 24-32px (xl-2xl)
+- Form field spacing: 16px (md)
+- Button internal padding: 12-16px horizontal
 
-**File Upload Zone**:
-- Drag-and-drop area with dashed border
-- Progress indicators for upload status
-- Helper text for required CSV headers
+## Component Styling
 
-**Data Table**:
-- Columns: Name, Title, Company, Email, LinkedIn URL, Status, Preview
-- Chip-style status badges with color coding:
-  - Pending: Neutral gray
-  - Generating: Cyan (accent)
-  - Ready: Success green
-  - Sent: Muted success
-  - Error: Red alert
-- Row actions and selection checkboxes
+### Buttons
+- **Primary**: Off-white/porcelain background, dark text
+  - Subtle border matching background
+  - Hover: Slight elevation effect
+- **Secondary**: Dark graphite background, light text
+  - Subtle border
+  - Hover: Brightness increase
+- **Ghost**: Transparent, light text
+  - Hover: Subtle background fill
+- **Destructive**: Red background, white text
+- **Border radius**: 0.5rem (premium pill-ish feel)
+- **No manual hover colors** - Use built-in elevate system
 
-**Modal for Email Editing**:
-- Subject line input field
-- Body textarea (monospace font for email content)
-- Action buttons: "Save Changes", "Regenerate", "Cancel"
-- Overlay with semi-transparent dark backdrop
+### Cards
+- Background: `bg-card` (dark graphite)
+- Border: 1px `border-card-border`
+- Shadow: `shadow-md` for depth
+- Border radius: 0.5rem
+- Padding: 16-20px
+- No nested cards
 
-**Form Elements**:
-- Input fields with labels
-- Textarea for notes/context
-- Clear focus states with cyan accent border
-- Error states with red borders and helper text
+### Badges/Status Pills
+- Monochrome variants based on status
+- Small size for information density
+- Subtle borders for definition
+- Status-specific styling via utility classes
 
-**Buttons**:
-- Primary CTA: Cyan accent background with white text
-- Secondary: Outlined with cyan border
-- Destructive: Red background for critical actions
-- Loading states with spinner indicators
+### Input Fields
+- Background: `bg-input` (slightly lighter than card)
+- Border: 1px `border`
+- Focus: Ring with `ring` token
+- Placeholder: `text-muted-foreground`
+- Transition: 200ms smooth
 
-**Toast Notifications**:
-- Bottom-right positioning
-- Success, error, and info variants
-- Auto-dismiss with progress indicator
+### Sidebar
+- Background: Near-black (`hsl(0, 0%, 2%)`)
+- Border: Subtle graphite line
+- Active item: Porcelain background, dark text
+- Inactive hover: Accent background
+- Width: 280-320px (customizable via CSS vars)
 
-## Responsive Behavior
-- **Desktop** (>1024px): Full sidebar + main content layout
-- **Tablet** (768-1024px): Collapsible sidebar, stacked cards
-- **Mobile** (<768px): Hidden sidebar (hamburger menu), single column layout, hide non-critical table columns behind "Details" drawer
+### Dialogs/Modals
+- Background: `bg-card` with shadow
+- Overlay: Semi-transparent black
+- Border radius: 0.5rem
+- Max-height with scroll for content
 
-## Interactive States
-- Hover states: Subtle brightness increase or opacity change
-- Active/focus: Cyan accent borders and shadows
-- Disabled: 50% opacity with no-cursor
+## Layout Patterns
 
-## Visual Hierarchy
-- Primary actions prominently featured with accent color
-- Secondary actions in muted tones
-- Critical information (email previews, status) with clear visual weight
-- Iconography for quick scanning (status icons, action buttons)
+### Page Structure
+- Fixed sidebar with collapsible option
+- Sticky header with actions
+- Main content with max-width constraints
+- Consistent padding throughout
 
-## Key User Flows Visual Treatment
+### Grid System
+- 12-column conceptual grid
+- Responsive breakpoints
+- Gap spacing: 16-24px
 
-**Single Email Flow**:
-- Centered form card with max-width constraint
-- Prominent "Generate Basho Email" button
-- Loading state with skeleton or spinner
-- Result display in code-block-style container with copy button
+### Information Density
+- Dense layouts for productivity tools
+- Clear visual hierarchy
+- Scannable content organization
 
-**CSV Bulk Flow**:
-- Large drag-and-drop zone as primary focal point
-- Table takes full width with horizontal scroll on mobile
-- Bulk actions ("Select All", "Send Selected") in sticky header
-- Per-row "View/Edit" links opening modals
+## Interaction Design
+
+### Hover States
+- Use built-in `hover-elevate` utility
+- Subtle brightness increase
+- No color shifts on hover
+- Consistent timing (150-200ms)
+
+### Active States
+- Use built-in `active-elevate-2` utility
+- Slightly more pronounced than hover
+- Immediate feedback
+
+### Focus States
+- Ring with `ring` token color
+- Clear visibility for accessibility
+- Consistent across all inputs
+
+### Transitions
+- Duration: 150-200ms
+- Easing: ease-out or ease-in-out
+- Properties: background, opacity, transform
+
+## Visual Refinements
+
+### Shadows
+- Subtle, realistic shadows for depth
+- Darker in dark mode for visibility
+- Layer surfaces with shadow hierarchy
+
+### Borders
+- Hairline (1px) for subtle separation
+- Consistent color from token
+- Never partial borders on rounded elements
+
+### Scrollbars
+- Custom styled, thin (8px)
+- Muted colors
+- Hover state for visibility
 
 ## Accessibility
-- High contrast ratios (WCAG AAA on black background)
-- Clear focus indicators with cyan outlines
-- Keyboard navigation support
-- Screen reader-friendly labels
 
-## Brand Consistency
-- Minimal, professional aesthetic avoiding flashy animations
-- Consistent use of cyan accent throughout for interactive elements
-- Dark theme reinforcing enterprise/productivity positioning
+### Contrast
+- Minimum 4.5:1 for body text
+- 3:1 for large text and UI elements
+- Test with contrast checker
+
+### Focus Indicators
+- Visible ring on all interactive elements
+- High contrast against background
+- Never remove outline without replacement
+
+### Motion
+- Respect reduced motion preferences
+- Keep animations subtle and purposeful
+
+## Brand Expression
+
+### Visual Tone
+- Professional and sophisticated
+- Minimal and focused
+- Premium and trustworthy
+- Enterprise-ready
+
+### Consistency
+- Same interaction patterns throughout
+- Unified color application
+- Predictable component behavior
+
+### Avoid
+- Bright accent colors (cyan, green highlights)
+- Heavy gradients or patterns
+- Excessive shadows or depth
+- Decorative elements without purpose
