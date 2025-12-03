@@ -2,8 +2,9 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { generateEmail, generateEmailsBatch } from "./openai";
 import { sendEmail, isSendGridConfigured, initSendGrid } from "./sendgrid";
+import { createHubSpotService } from "./hubspot";
 import { storage } from "./storage";
-import { generateEmailRequestSchema, bulkGenerateRequestSchema, userProfileSchema } from "@shared/schema";
+import { generateEmailRequestSchema, bulkGenerateRequestSchema, userProfileSchema, type CrmProvider } from "@shared/schema";
 import { z } from "zod";
 
 // Initialize SendGrid on module load
@@ -205,6 +206,236 @@ export async function registerRoutes(
       console.error("Save profile error:", error);
       return res.status(500).json({
         error: "Failed to save profile",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // ============================================
+  // CRM Integration Endpoints
+  // ============================================
+
+  // Get all CRM connections
+  app.get("/api/crm/connections", async (req, res) => {
+    try {
+      const connections = await storage.getCrmConnections();
+      
+      // Check if each CRM is configured via API key
+      const hubspotConfigured = !!process.env.HUBSPOT_API_KEY;
+      
+      return res.json({
+        connections,
+        available: {
+          hubspot: hubspotConfigured,
+          salesforce: false, // Not implemented yet
+          pipedrive: false, // Not implemented yet
+        },
+      });
+    } catch (error: any) {
+      console.error("Get CRM connections error:", error);
+      return res.status(500).json({
+        error: "Failed to get CRM connections",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Test and connect HubSpot
+  app.post("/api/crm/hubspot/connect", async (req, res) => {
+    try {
+      const hubspot = createHubSpotService();
+      
+      if (!hubspot) {
+        return res.status(400).json({
+          error: "HubSpot not configured",
+          message: "Add HUBSPOT_API_KEY to your Secrets to connect HubSpot.",
+        });
+      }
+
+      const result = await hubspot.testConnection();
+      
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Connection failed",
+          message: result.error,
+        });
+      }
+
+      // Save connection to database
+      const connection = await storage.saveCrmConnection("hubspot", {
+        accountName: result.accountName,
+      });
+
+      return res.json({
+        success: true,
+        connection,
+      });
+    } catch (error: any) {
+      console.error("HubSpot connect error:", error);
+      return res.status(500).json({
+        error: "Failed to connect to HubSpot",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Disconnect HubSpot
+  app.post("/api/crm/hubspot/disconnect", async (req, res) => {
+    try {
+      await storage.disconnectCrm("hubspot");
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error("HubSpot disconnect error:", error);
+      return res.status(500).json({
+        error: "Failed to disconnect HubSpot",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Sync contacts from HubSpot
+  app.post("/api/crm/hubspot/sync", async (req, res) => {
+    try {
+      const hubspot = createHubSpotService();
+      
+      if (!hubspot) {
+        return res.status(400).json({
+          error: "HubSpot not configured",
+          message: "Add HUBSPOT_API_KEY to your Secrets to sync contacts.",
+        });
+      }
+
+      const limit = parseInt(req.query.limit as string) || 100;
+      const contacts = await hubspot.getContacts(limit);
+
+      if (contacts.length === 0) {
+        return res.json({
+          success: true,
+          synced: 0,
+          message: "No contacts found with complete data (email, first name, last name required).",
+        });
+      }
+
+      // Save contacts to database
+      const saved = await storage.saveProspects(contacts);
+
+      return res.json({
+        success: true,
+        synced: saved.length,
+        prospects: saved,
+      });
+    } catch (error: any) {
+      console.error("HubSpot sync error:", error);
+      return res.status(500).json({
+        error: "Failed to sync contacts",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Search HubSpot contacts
+  app.get("/api/crm/hubspot/search", async (req, res) => {
+    try {
+      const hubspot = createHubSpotService();
+      
+      if (!hubspot) {
+        return res.status(400).json({
+          error: "HubSpot not configured",
+          message: "Add HUBSPOT_API_KEY to your Secrets.",
+        });
+      }
+
+      const query = req.query.q as string;
+      if (!query) {
+        return res.status(400).json({
+          error: "Missing query",
+          message: "Provide a search query with ?q=",
+        });
+      }
+
+      const contacts = await hubspot.searchContacts(query);
+      return res.json({ contacts });
+    } catch (error: any) {
+      console.error("HubSpot search error:", error);
+      return res.status(500).json({
+        error: "Failed to search contacts",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Log email activity to HubSpot
+  app.post("/api/crm/hubspot/log-activity", async (req, res) => {
+    try {
+      const hubspot = createHubSpotService();
+      
+      if (!hubspot) {
+        return res.status(400).json({
+          error: "HubSpot not configured",
+          message: "Add HUBSPOT_API_KEY to your Secrets.",
+        });
+      }
+
+      const schema = z.object({
+        contactId: z.string(),
+        subject: z.string(),
+        body: z.string(),
+        fromEmail: z.string().email(),
+        toEmail: z.string().email(),
+      });
+
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const result = await hubspot.logEmailActivity(parsed.data.contactId, {
+        subject: parsed.data.subject,
+        body: parsed.data.body,
+        fromEmail: parsed.data.fromEmail,
+        toEmail: parsed.data.toEmail,
+      });
+
+      if (!result.success) {
+        return res.status(500).json({
+          error: "Failed to log activity",
+          message: result.error,
+        });
+      }
+
+      return res.json({
+        success: true,
+        activityId: result.activityId,
+      });
+    } catch (error: any) {
+      console.error("HubSpot log activity error:", error);
+      return res.status(500).json({
+        error: "Failed to log activity",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Get all synced prospects
+  app.get("/api/prospects", async (req, res) => {
+    try {
+      const source = req.query.source as CrmProvider | undefined;
+      
+      let prospects;
+      if (source) {
+        prospects = await storage.getProspectsByCrmSource(source);
+      } else {
+        prospects = await storage.getAllProspects();
+      }
+
+      return res.json(prospects);
+    } catch (error: any) {
+      console.error("Get prospects error:", error);
+      return res.status(500).json({
+        error: "Failed to get prospects",
         message: error?.message || "An unexpected error occurred.",
       });
     }

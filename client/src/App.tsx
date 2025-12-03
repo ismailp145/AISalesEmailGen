@@ -10,12 +10,14 @@ import NotFound from "@/pages/not-found";
 import SingleEmailPage from "@/pages/SingleEmailPage";
 import BulkCampaignsPage from "@/pages/BulkCampaignsPage";
 import SettingsPage from "@/pages/SettingsPage";
+import IntegrationsPage from "@/pages/IntegrationsPage";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={SingleEmailPage} />
       <Route path="/bulk" component={BulkCampaignsPage} />
+      <Route path="/integrations" component={IntegrationsPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>
