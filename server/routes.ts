@@ -3,6 +3,9 @@ import { createServer, type Server } from "http";
 import { generateEmail, generateEmailsBatch, detectTriggers } from "./openai";
 import { sendEmail, isSendGridConfigured, initSendGrid } from "./sendgrid";
 import { createHubSpotService } from "./hubspot";
+import { SalesforceService, createSalesforceService, isSalesforceConfigured } from "./salesforce";
+import { GmailService, createGmailService, isGmailConfigured } from "./gmail";
+import { OutlookService, createOutlookService, isOutlookConfigured } from "./outlook";
 import { storage } from "./storage";
 import { 
   generateEmailRequestSchema, 
@@ -26,19 +29,31 @@ const sendEmailRequestSchema = z.object({
   from: z.string().email("Invalid sender email"),
   subject: z.string().min(1, "Subject is required"),
   body: z.string().min(1, "Email body is required"),
+  provider: z.enum(["sendgrid", "gmail", "outlook"]).optional().default("sendgrid"),
 });
 
+// Helper to get the base URL for OAuth redirects
+function getBaseUrl(req: any): string {
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+  return `${protocol}://${host}`;
+}
+
 function checkAIIntegration(): { configured: boolean; message?: string } {
+  // Check for OpenRouter first, then OpenAI
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  const openAIKey = process.env.OPENAI_API_KEY;
   const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
   const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
   
-  if (!baseUrl || !apiKey) {
-    return {
-      configured: false,
-      message: "AI integration is not configured. Please ensure the OpenAI integration is set up correctly.",
-    };
+  if (openRouterKey || openAIKey || (baseUrl && apiKey)) {
+    return { configured: true };
   }
-  return { configured: true };
+  
+  return {
+    configured: false,
+    message: "AI integration is not configured. Please set OPENROUTER_API_KEY or OPENAI_API_KEY.",
+  };
 }
 
 export async function registerRoutes(
@@ -52,8 +67,15 @@ export async function registerRoutes(
       status: "ok",
       ai: aiStatus.configured ? "configured" : "not configured",
       sendgrid: isSendGridConfigured() ? "configured" : "not configured",
+      salesforce: isSalesforceConfigured() ? "configured" : "not configured",
+      gmail: isGmailConfigured() ? "configured" : "not configured",
+      outlook: isOutlookConfigured() ? "configured" : "not configured",
     });
   });
+
+  // ============================================
+  // Email Generation Endpoints
+  // ============================================
 
   // Single email generation endpoint
   app.post("/api/generate-email", async (req, res) => {
@@ -76,7 +98,26 @@ export async function registerRoutes(
       }
 
       const { prospect, tone, length, triggers } = parsed.data;
-      const email = await generateEmail({ prospect, tone, length, triggers });
+      const linkedinContent = (req.body as any).linkedinContent;
+      
+      const email = await generateEmail({ prospect, tone, length, triggers, linkedinContent });
+      
+      // Save to email activities table
+      try {
+        await storage.saveEmailActivity({
+          prospectEmail: prospect.email,
+          prospectName: `${prospect.firstName} ${prospect.lastName}`,
+          prospectCompany: prospect.company,
+          subject: email.subject,
+          body: email.body,
+          tone,
+          length,
+          status: "generated",
+        });
+      } catch (saveError) {
+        console.error("Failed to save email activity:", saveError);
+        // Don't fail the request if save fails
+      }
       
       return res.json(email);
     } catch (error: any) {
@@ -170,6 +211,27 @@ export async function registerRoutes(
         status: results[index].email ? "ready" : "error",
       }));
 
+      // Save all generated emails
+      for (let i = 0; i < response.length; i++) {
+        const item = response[i];
+        if (item.email) {
+          try {
+            await storage.saveEmailActivity({
+              prospectEmail: item.prospect.email,
+              prospectName: `${item.prospect.firstName} ${item.prospect.lastName}`,
+              prospectCompany: item.prospect.company,
+              subject: item.email.subject,
+              body: item.email.body,
+              tone,
+              length,
+              status: "generated",
+            });
+          } catch (saveError) {
+            console.error("Failed to save email activity:", saveError);
+          }
+        }
+      }
+
       return res.json(response);
     } catch (error: any) {
       console.error("Bulk email generation error:", error);
@@ -180,16 +242,13 @@ export async function registerRoutes(
     }
   });
 
-  // Send email endpoint (via SendGrid)
+  // ============================================
+  // Email Sending Endpoints
+  // ============================================
+
+  // Send email endpoint (multi-provider)
   app.post("/api/send-email", async (req, res) => {
     try {
-      if (!isSendGridConfigured()) {
-        return res.status(503).json({
-          error: "Service unavailable",
-          message: "SendGrid is not configured. Add SENDGRID_API_KEY to your Secrets.",
-        });
-      }
-
       const parsed = sendEmailRequestSchema.safeParse(req.body);
       
       if (!parsed.success) {
@@ -199,8 +258,44 @@ export async function registerRoutes(
         });
       }
 
-      const { to, from, subject, body } = parsed.data;
-      const result = await sendEmail({ to, from, subject, body });
+      const { to, from, subject, body, provider } = parsed.data;
+      
+      let result: { success: boolean; error?: string; messageId?: string };
+
+      if (provider === "gmail") {
+        // Get Gmail connection
+        const connection = await storage.getCrmConnection("gmail" as any);
+        if (!connection || !connection.accessToken) {
+          return res.status(503).json({
+            error: "Gmail not connected",
+            message: "Please connect your Gmail account first.",
+          });
+        }
+        
+        const gmail = createGmailService(connection.accessToken, connection.refreshToken || undefined);
+        result = await gmail.sendEmail({ to, from, subject, body });
+      } else if (provider === "outlook") {
+        // Get Outlook connection
+        const connection = await storage.getCrmConnection("outlook" as any);
+        if (!connection || !connection.accessToken) {
+          return res.status(503).json({
+            error: "Outlook not connected",
+            message: "Please connect your Outlook account first.",
+          });
+        }
+        
+        const outlook = createOutlookService(connection.accessToken, connection.refreshToken || undefined);
+        result = await outlook.sendEmail({ to, subject, body });
+      } else {
+        // Default to SendGrid
+        if (!isSendGridConfigured()) {
+          return res.status(503).json({
+            error: "Service unavailable",
+            message: "SendGrid is not configured. Add SENDGRID_API_KEY to your Secrets.",
+          });
+        }
+        result = await sendEmail({ to, from, subject, body });
+      }
 
       if (!result.success) {
         return res.status(500).json({
@@ -209,7 +304,14 @@ export async function registerRoutes(
         });
       }
 
-      return res.json({ success: true, message: "Email sent successfully" });
+      // Update email status in database
+      try {
+        await storage.updateEmailActivityStatus(to, subject, "sent", provider);
+      } catch (updateError) {
+        console.error("Failed to update email status:", updateError);
+      }
+
+      return res.json({ success: true, message: "Email sent successfully", provider });
     } catch (error: any) {
       console.error("Send email error:", error);
       return res.status(500).json({ 
@@ -218,6 +320,86 @@ export async function registerRoutes(
       });
     }
   });
+
+  // ============================================
+  // Email History Endpoints
+  // ============================================
+
+  // Get all email activities
+  app.get("/api/emails", async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const status = req.query.status as string | undefined;
+      
+      const emails = await storage.getEmailActivities(limit, offset, status);
+      return res.json(emails);
+    } catch (error: any) {
+      console.error("Get emails error:", error);
+      return res.status(500).json({
+        error: "Failed to get emails",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Get single email activity
+  app.get("/api/emails/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid email ID" });
+      }
+
+      const email = await storage.getEmailActivity(id);
+      if (!email) {
+        return res.status(404).json({ error: "Email not found" });
+      }
+
+      return res.json(email);
+    } catch (error: any) {
+      console.error("Get email error:", error);
+      return res.status(500).json({
+        error: "Failed to get email",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Update email status
+  app.patch("/api/emails/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid email ID" });
+      }
+
+      const schema = z.object({
+        status: z.enum(["generated", "sent", "opened", "replied"]),
+      });
+
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      await storage.updateEmailActivityStatusById(id, parsed.data.status);
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update email error:", error);
+      return res.status(500).json({
+        error: "Failed to update email",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // ============================================
+  // User Profile Endpoints
+  // ============================================
 
   // Get user profile
   app.get("/api/profile", async (req, res) => {
@@ -265,15 +447,13 @@ export async function registerRoutes(
     try {
       const connections = await storage.getCrmConnections();
       
-      // Check if each CRM is configured via API key
-      const hubspotConfigured = !!process.env.HUBSPOT_API_KEY;
-      
       return res.json({
         connections,
         available: {
-          hubspot: hubspotConfigured,
-          salesforce: false, // Not implemented yet
-          pipedrive: false, // Not implemented yet
+          hubspot: !!process.env.HUBSPOT_API_KEY,
+          salesforce: isSalesforceConfigured(),
+          gmail: isGmailConfigured(),
+          outlook: isOutlookConfigured(),
         },
       });
     } catch (error: any) {
@@ -284,6 +464,10 @@ export async function registerRoutes(
       });
     }
   });
+
+  // ============================================
+  // HubSpot Endpoints
+  // ============================================
 
   // Test and connect HubSpot
   app.post("/api/crm/hubspot/connect", async (req, res) => {
@@ -463,6 +647,489 @@ export async function registerRoutes(
       });
     }
   });
+
+  // ============================================
+  // Salesforce Endpoints
+  // ============================================
+
+  // Initiate Salesforce OAuth
+  app.get("/api/crm/salesforce/auth", (req, res) => {
+    try {
+      if (!isSalesforceConfigured()) {
+        return res.status(400).json({
+          error: "Salesforce not configured",
+          message: "Add SALESFORCE_CLIENT_ID and SALESFORCE_CLIENT_SECRET to your environment.",
+        });
+      }
+
+      const baseUrl = getBaseUrl(req);
+      const redirectUri = `${baseUrl}/api/crm/salesforce/callback`;
+      const authUrl = SalesforceService.getAuthUrl(redirectUri);
+      
+      return res.json({ authUrl });
+    } catch (error: any) {
+      console.error("Salesforce auth error:", error);
+      return res.status(500).json({
+        error: "Failed to initiate Salesforce auth",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Salesforce OAuth callback
+  app.get("/api/crm/salesforce/callback", async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const error = req.query.error as string;
+
+      if (error) {
+        return res.redirect(`/integrations?error=${encodeURIComponent(error)}`);
+      }
+
+      if (!code) {
+        return res.redirect("/integrations?error=No authorization code received");
+      }
+
+      const baseUrl = getBaseUrl(req);
+      const redirectUri = `${baseUrl}/api/crm/salesforce/callback`;
+      
+      const tokens = await SalesforceService.exchangeCodeForTokens(code, redirectUri);
+      
+      // Create service and test connection
+      const salesforce = new SalesforceService(
+        tokens.access_token,
+        tokens.instance_url,
+        tokens.refresh_token
+      );
+      
+      const testResult = await salesforce.testConnection();
+      
+      if (!testResult.success) {
+        return res.redirect(`/integrations?error=${encodeURIComponent(testResult.error || "Connection test failed")}`);
+      }
+
+      // Save connection
+      await storage.saveCrmConnection("salesforce", {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        accountName: testResult.accountName,
+        accountId: testResult.userId,
+      });
+
+      return res.redirect("/integrations?success=salesforce");
+    } catch (error: any) {
+      console.error("Salesforce callback error:", error);
+      return res.redirect(`/integrations?error=${encodeURIComponent(error?.message || "OAuth failed")}`);
+    }
+  });
+
+  // Disconnect Salesforce
+  app.post("/api/crm/salesforce/disconnect", async (req, res) => {
+    try {
+      await storage.disconnectCrm("salesforce");
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error("Salesforce disconnect error:", error);
+      return res.status(500).json({
+        error: "Failed to disconnect Salesforce",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Sync contacts from Salesforce
+  app.post("/api/crm/salesforce/sync", async (req, res) => {
+    try {
+      const connection = await storage.getCrmConnection("salesforce");
+      
+      if (!connection || !connection.accessToken) {
+        return res.status(400).json({
+          error: "Salesforce not connected",
+          message: "Please connect your Salesforce account first.",
+        });
+      }
+
+      const salesforce = createSalesforceService(
+        connection.accessToken,
+        connection.instanceUrl || "",
+        connection.refreshToken || undefined
+      );
+
+      const limit = parseInt(req.query.limit as string) || 100;
+      const contacts = await salesforce.getContacts(limit);
+
+      if (contacts.length === 0) {
+        return res.json({
+          success: true,
+          synced: 0,
+          message: "No contacts found.",
+        });
+      }
+
+      const saved = await storage.saveProspects(contacts);
+
+      return res.json({
+        success: true,
+        synced: saved.length,
+        prospects: saved,
+      });
+    } catch (error: any) {
+      console.error("Salesforce sync error:", error);
+      return res.status(500).json({
+        error: "Failed to sync contacts",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Log email activity to Salesforce
+  app.post("/api/crm/salesforce/log-activity", async (req, res) => {
+    try {
+      const connection = await storage.getCrmConnection("salesforce");
+      
+      if (!connection || !connection.accessToken) {
+        return res.status(400).json({
+          error: "Salesforce not connected",
+          message: "Please connect your Salesforce account first.",
+        });
+      }
+
+      const schema = z.object({
+        contactId: z.string(),
+        subject: z.string(),
+        body: z.string(),
+        fromEmail: z.string().email(),
+        toEmail: z.string().email(),
+      });
+
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const salesforce = createSalesforceService(
+        connection.accessToken,
+        connection.instanceUrl || "",
+        connection.refreshToken || undefined
+      );
+
+      const result = await salesforce.logEmailActivity(parsed.data.contactId, {
+        subject: parsed.data.subject,
+        body: parsed.data.body,
+        fromEmail: parsed.data.fromEmail,
+        toEmail: parsed.data.toEmail,
+      });
+
+      if (!result.success) {
+        return res.status(500).json({
+          error: "Failed to log activity",
+          message: result.error,
+        });
+      }
+
+      return res.json({
+        success: true,
+        activityId: result.activityId,
+      });
+    } catch (error: any) {
+      console.error("Salesforce log activity error:", error);
+      return res.status(500).json({
+        error: "Failed to log activity",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // ============================================
+  // Gmail Endpoints
+  // ============================================
+
+  // Initiate Gmail OAuth
+  app.get("/api/email/gmail/auth", (req, res) => {
+    try {
+      if (!isGmailConfigured()) {
+        return res.status(400).json({
+          error: "Gmail not configured",
+          message: "Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your environment.",
+        });
+      }
+
+      const baseUrl = getBaseUrl(req);
+      const redirectUri = `${baseUrl}/api/email/gmail/callback`;
+      const authUrl = GmailService.getAuthUrl(redirectUri);
+      
+      return res.json({ authUrl });
+    } catch (error: any) {
+      console.error("Gmail auth error:", error);
+      return res.status(500).json({
+        error: "Failed to initiate Gmail auth",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Gmail OAuth callback
+  app.get("/api/email/gmail/callback", async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const error = req.query.error as string;
+
+      if (error) {
+        return res.redirect(`/integrations?error=${encodeURIComponent(error)}`);
+      }
+
+      if (!code) {
+        return res.redirect("/integrations?error=No authorization code received");
+      }
+
+      const baseUrl = getBaseUrl(req);
+      const redirectUri = `${baseUrl}/api/email/gmail/callback`;
+      
+      const tokens = await GmailService.exchangeCodeForTokens(code, redirectUri);
+      
+      // Create service and test connection
+      const gmail = new GmailService(tokens.access_token, tokens.refresh_token);
+      const testResult = await gmail.testConnection();
+      
+      if (!testResult.success) {
+        return res.redirect(`/integrations?error=${encodeURIComponent(testResult.error || "Connection test failed")}`);
+      }
+
+      // Save connection (using 'gmail' as provider in crmConnections)
+      await storage.saveCrmConnection("gmail" as CrmProvider, {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        accountName: testResult.email,
+        accountId: testResult.email,
+      });
+
+      return res.redirect("/integrations?success=gmail");
+    } catch (error: any) {
+      console.error("Gmail callback error:", error);
+      return res.redirect(`/integrations?error=${encodeURIComponent(error?.message || "OAuth failed")}`);
+    }
+  });
+
+  // Disconnect Gmail
+  app.post("/api/email/gmail/disconnect", async (req, res) => {
+    try {
+      await storage.disconnectCrm("gmail" as CrmProvider);
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error("Gmail disconnect error:", error);
+      return res.status(500).json({
+        error: "Failed to disconnect Gmail",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Send email via Gmail
+  app.post("/api/email/gmail/send", async (req, res) => {
+    try {
+      const connection = await storage.getCrmConnection("gmail" as CrmProvider);
+      
+      if (!connection || !connection.accessToken) {
+        return res.status(400).json({
+          error: "Gmail not connected",
+          message: "Please connect your Gmail account first.",
+        });
+      }
+
+      const schema = z.object({
+        to: z.string().email(),
+        subject: z.string().min(1),
+        body: z.string().min(1),
+        replyTo: z.string().email().optional(),
+      });
+
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const gmail = createGmailService(
+        connection.accessToken,
+        connection.refreshToken || undefined
+      );
+
+      const result = await gmail.sendEmail({
+        to: parsed.data.to,
+        from: connection.accountName || "",
+        subject: parsed.data.subject,
+        body: parsed.data.body,
+        replyTo: parsed.data.replyTo,
+      });
+
+      if (!result.success) {
+        return res.status(500).json({
+          error: "Failed to send email",
+          message: result.error,
+        });
+      }
+
+      return res.json({
+        success: true,
+        messageId: result.messageId,
+      });
+    } catch (error: any) {
+      console.error("Gmail send error:", error);
+      return res.status(500).json({
+        error: "Failed to send email",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // ============================================
+  // Outlook Endpoints
+  // ============================================
+
+  // Initiate Outlook OAuth
+  app.get("/api/email/outlook/auth", (req, res) => {
+    try {
+      if (!isOutlookConfigured()) {
+        return res.status(400).json({
+          error: "Outlook not configured",
+          message: "Add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET to your environment.",
+        });
+      }
+
+      const baseUrl = getBaseUrl(req);
+      const redirectUri = `${baseUrl}/api/email/outlook/callback`;
+      const authUrl = OutlookService.getAuthUrl(redirectUri);
+      
+      return res.json({ authUrl });
+    } catch (error: any) {
+      console.error("Outlook auth error:", error);
+      return res.status(500).json({
+        error: "Failed to initiate Outlook auth",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Outlook OAuth callback
+  app.get("/api/email/outlook/callback", async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const error = req.query.error as string;
+
+      if (error) {
+        return res.redirect(`/integrations?error=${encodeURIComponent(error)}`);
+      }
+
+      if (!code) {
+        return res.redirect("/integrations?error=No authorization code received");
+      }
+
+      const baseUrl = getBaseUrl(req);
+      const redirectUri = `${baseUrl}/api/email/outlook/callback`;
+      
+      const tokens = await OutlookService.exchangeCodeForTokens(code, redirectUri);
+      
+      // Create service and test connection
+      const outlook = new OutlookService(tokens.access_token, tokens.refresh_token);
+      const testResult = await outlook.testConnection();
+      
+      if (!testResult.success) {
+        return res.redirect(`/integrations?error=${encodeURIComponent(testResult.error || "Connection test failed")}`);
+      }
+
+      // Save connection (using 'outlook' as provider in crmConnections)
+      await storage.saveCrmConnection("outlook" as CrmProvider, {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        accountName: testResult.email,
+        accountId: testResult.email,
+      });
+
+      return res.redirect("/integrations?success=outlook");
+    } catch (error: any) {
+      console.error("Outlook callback error:", error);
+      return res.redirect(`/integrations?error=${encodeURIComponent(error?.message || "OAuth failed")}`);
+    }
+  });
+
+  // Disconnect Outlook
+  app.post("/api/email/outlook/disconnect", async (req, res) => {
+    try {
+      await storage.disconnectCrm("outlook" as CrmProvider);
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error("Outlook disconnect error:", error);
+      return res.status(500).json({
+        error: "Failed to disconnect Outlook",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Send email via Outlook
+  app.post("/api/email/outlook/send", async (req, res) => {
+    try {
+      const connection = await storage.getCrmConnection("outlook" as CrmProvider);
+      
+      if (!connection || !connection.accessToken) {
+        return res.status(400).json({
+          error: "Outlook not connected",
+          message: "Please connect your Outlook account first.",
+        });
+      }
+
+      const schema = z.object({
+        to: z.string().email(),
+        subject: z.string().min(1),
+        body: z.string().min(1),
+        replyTo: z.string().email().optional(),
+      });
+
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const outlook = createOutlookService(
+        connection.accessToken,
+        connection.refreshToken || undefined
+      );
+
+      const result = await outlook.sendEmail({
+        to: parsed.data.to,
+        subject: parsed.data.subject,
+        body: parsed.data.body,
+        replyTo: parsed.data.replyTo,
+      });
+
+      if (!result.success) {
+        return res.status(500).json({
+          error: "Failed to send email",
+          message: result.error,
+        });
+      }
+
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error("Outlook send error:", error);
+      return res.status(500).json({
+        error: "Failed to send email",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // ============================================
+  // Prospect Endpoints
+  // ============================================
 
   // Get all synced prospects
   app.get("/api/prospects", async (req, res) => {

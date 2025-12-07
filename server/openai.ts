@@ -1,17 +1,23 @@
-import OpenAI from "openai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { generateText } from "ai";
 import type { Prospect, GeneratedEmail, UserProfile, DetectedTrigger, DetectTriggersResponse } from "@shared/schema";
 import { storage } from "./storage";
 import { nanoid } from "nanoid";
 
-// Check for user's own OpenAI API key first, fall back to Replit AI Integrations
-const useOwnKey = !!process.env.OPENAI_API_KEY;
-
-const openai = new OpenAI({
-  baseURL: useOwnKey ? "https://api.openai.com/v1" : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  apiKey: useOwnKey ? process.env.OPENAI_API_KEY : process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+// Configure OpenRouter as the provider using Vercel AI SDK
+const openrouter = createOpenAI({
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKey: process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "",
 });
 
-console.log(`[OpenAI] Using ${useOwnKey ? "your own OpenAI API key" : "Replit AI Integrations"}`);
+// Fallback to direct OpenAI if OPENROUTER_API_KEY is not set
+const useOpenRouter = !!process.env.OPENROUTER_API_KEY;
+const provider = useOpenRouter ? openrouter : createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "",
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.openai.com/v1",
+});
+
+console.log(`[AI] Using ${useOpenRouter ? "OpenRouter" : "OpenAI"} provider`);
 
 interface EmailGenerationOptions {
   prospect: Prospect;
@@ -19,10 +25,11 @@ interface EmailGenerationOptions {
   length: "short" | "medium";
   profile?: UserProfile;
   triggers?: DetectedTrigger[];
+  linkedinContent?: string;
 }
 
 function buildPrompt(options: EmailGenerationOptions): string {
-  const { prospect, tone, length, profile, triggers } = options;
+  const { prospect, tone, length, profile, triggers, linkedinContent } = options;
   
   const toneInstructions = {
     casual: "Write in a friendly, conversational tone. Use contractions and casual language.",
@@ -35,13 +42,27 @@ function buildPrompt(options: EmailGenerationOptions): string {
     medium: "Write a moderate-length email - about 4-6 sentences in the body. Include enough context but stay focused.",
   };
 
-  const linkedinContext = prospect.linkedinUrl 
-    ? `\nLinkedIn Profile: ${prospect.linkedinUrl}` 
+  const linkedinUrlContext = prospect.linkedinUrl 
+    ? `\nLinkedIn Profile URL: ${prospect.linkedinUrl}` 
     : "";
   
   const notesContext = prospect.notes 
     ? `\nAdditional Context: ${prospect.notes}` 
     : "";
+
+  // LinkedIn content paste section
+  let linkedinContentSection = "";
+  if (linkedinContent) {
+    linkedinContentSection = `\n\nLINKEDIN PROFILE CONTENT (use this for deep personalization):
+${linkedinContent}
+
+Use insights from this LinkedIn content to personalize the email. Reference their:
+- Headline or current role
+- Recent posts or articles
+- Career history or achievements
+- Skills or expertise areas
+- Education or certifications`;
+  }
 
   // Build trigger context if provided
   let triggerContext = "";
@@ -90,7 +111,7 @@ Generate a personalized cold sales email for the following prospect:
 Name: ${prospect.firstName} ${prospect.lastName}
 Title: ${prospect.title}
 Company: ${prospect.company}
-Email: ${prospect.email}${linkedinContext}${notesContext}${triggerContext}${senderContext}
+Email: ${prospect.email}${linkedinUrlContext}${notesContext}${linkedinContentSection}${triggerContext}${senderContext}
 
 TONE: ${toneInstructions[tone]}
 
@@ -112,45 +133,50 @@ Return your response as a JSON object with two fields:
 The email should be signed with just "Best," followed by "${signatureName}" (no full name or title).`;
 }
 
-export async function generateEmail(options: Omit<EmailGenerationOptions, 'profile'> & { triggers?: DetectedTrigger[] }): Promise<GeneratedEmail> {
+export async function generateEmail(options: Omit<EmailGenerationOptions, 'profile'> & { triggers?: DetectedTrigger[]; linkedinContent?: string }): Promise<GeneratedEmail> {
   // Fetch user profile to include in the prompt
   const profile = await storage.getUserProfile();
-  const optionsWithProfile: EmailGenerationOptions = { ...options, profile, triggers: options.triggers };
+  const optionsWithProfile: EmailGenerationOptions = { ...options, profile, triggers: options.triggers, linkedinContent: options.linkedinContent };
   
   const prompt = buildPrompt(optionsWithProfile);
 
-  console.log("[OpenAI] Starting email generation for:", options.prospect.firstName, options.prospect.lastName);
-  console.log("[OpenAI] Profile loaded:", profile.senderName ? `${profile.senderName} @ ${profile.companyName}` : "No profile set");
-  console.log("[OpenAI] Using:", useOwnKey ? "Your OpenAI API key" : "Replit AI Integrations");
+  console.log("[AI] Starting email generation for:", options.prospect.firstName, options.prospect.lastName);
+  console.log("[AI] Profile loaded:", profile.senderName ? `${profile.senderName} @ ${profile.companyName}` : "No profile set");
+  console.log("[AI] Using:", useOpenRouter ? "OpenRouter" : "OpenAI");
 
   try {
-    const response = await openai.chat.completions.create({
-      // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-      model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      max_tokens: 1024,
+    const model = useOpenRouter ? "openai/gpt-4o" : "gpt-4o";
+    
+    const { text } = await generateText({
+      model: provider(model),
+      prompt,
+      maxOutputTokens: 1024,
     });
 
-    console.log("[OpenAI] Response received, choices:", response.choices?.length);
+    console.log("[AI] Response received");
 
-    const content = response.choices[0]?.message?.content;
-    
-    if (!content) {
-      console.error("[OpenAI] No content in response:", JSON.stringify(response, null, 2));
+    if (!text) {
+      console.error("[AI] No content in response");
       throw new Error("No response from AI");
     }
 
-    const parsed = JSON.parse(content);
-    console.log("[OpenAI] Successfully parsed email for:", options.prospect.firstName);
+    // Parse JSON from response - handle potential markdown code blocks
+    let jsonContent = text;
+    if (text.includes("```json")) {
+      jsonContent = text.replace(/```json\n?/g, "").replace(/```\n?/g, "");
+    } else if (text.includes("```")) {
+      jsonContent = text.replace(/```\n?/g, "");
+    }
+
+    const parsed = JSON.parse(jsonContent.trim());
+    console.log("[AI] Successfully parsed email for:", options.prospect.firstName);
     
     return {
       subject: parsed.subject,
       body: parsed.body,
     };
   } catch (error: any) {
-    console.error("[OpenAI] Error:", error?.message || error);
-    console.error("[OpenAI] Full error:", JSON.stringify(error, null, 2));
+    console.error("[AI] Error:", error?.message || error);
     throw error;
   }
 }
@@ -174,6 +200,7 @@ export async function generateEmailsBatch(
     prospect: Prospect;
     tone: "casual" | "professional" | "hyper-personal";
     length: "short" | "medium";
+    linkedinContent?: string;
   }>,
   onProgress?: (index: number, result: GeneratedEmail | Error) => void
 ): Promise<Array<{ email?: GeneratedEmail; error?: string }>> {
@@ -267,24 +294,31 @@ Prioritize triggers with higher relevance that would make great email openers.`;
 export async function detectTriggers(prospect: Prospect): Promise<DetectTriggersResponse> {
   const prompt = buildTriggerDetectionPrompt(prospect);
 
-  console.log("[OpenAI] Starting trigger detection for:", prospect.firstName, prospect.lastName, "@", prospect.company);
+  console.log("[AI] Starting trigger detection for:", prospect.firstName, prospect.lastName, "@", prospect.company);
 
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      max_tokens: 2048,
-    });
-
-    const content = response.choices[0]?.message?.content;
+    const model = useOpenRouter ? "openai/gpt-4o" : "gpt-4o";
     
-    if (!content) {
-      console.error("[OpenAI] No content in trigger detection response");
+    const { text } = await generateText({
+      model: provider(model),
+      prompt,
+      maxOutputTokens: 2048,
+    });
+    
+    if (!text) {
+      console.error("[AI] No content in trigger detection response");
       throw new Error("No response from AI");
     }
 
-    const parsed = JSON.parse(content);
+    // Parse JSON from response - handle potential markdown code blocks
+    let jsonContent = text;
+    if (text.includes("```json")) {
+      jsonContent = text.replace(/```json\n?/g, "").replace(/```\n?/g, "");
+    } else if (text.includes("```")) {
+      jsonContent = text.replace(/```\n?/g, "");
+    }
+
+    const parsed = JSON.parse(jsonContent.trim());
     
     // Valid trigger types that match our schema
     const validTypes = ["news", "linkedin", "company_event", "industry_trend", "job_change", "funding"] as const;
@@ -307,14 +341,14 @@ export async function detectTriggers(prospect: Prospect): Promise<DetectTriggers
         selected: trigger.relevance === "high", // Auto-select high relevance triggers
       }));
 
-    console.log("[OpenAI] Detected", triggersWithIds.length, "triggers for:", prospect.firstName);
+    console.log("[AI] Detected", triggersWithIds.length, "triggers for:", prospect.firstName);
     
     return {
       triggers: triggersWithIds,
       prospectSummary: parsed.prospectSummary || "",
     };
   } catch (error: any) {
-    console.error("[OpenAI] Trigger detection error:", error?.message || error);
+    console.error("[AI] Trigger detection error:", error?.message || error);
     throw error;
   }
 }

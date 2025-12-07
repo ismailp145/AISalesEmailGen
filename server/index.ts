@@ -3,6 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { clerkAuthMiddleware } from "./middleware/clerk";
 
 const app = express();
 const httpServer = createServer(app);
@@ -22,6 +23,14 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Apply Clerk auth middleware globally (if configured)
+if (process.env.CLERK_SECRET_KEY) {
+  app.use(clerkAuthMiddleware);
+  console.log("[Auth] Clerk authentication enabled");
+} else {
+  console.log("[Auth] Clerk not configured - running without authentication");
+}
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

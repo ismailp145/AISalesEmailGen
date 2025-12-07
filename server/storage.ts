@@ -31,8 +31,29 @@ import {
   type CreateSequenceRequest,
   type SequenceStatus,
   type EnrollmentStatus,
+  type EmailActivityRecord,
   defaultUserProfile,
 } from "@shared/schema";
+
+// Extended CRM connection with full OAuth data
+export interface CrmConnectionFull extends CrmConnection {
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  instanceUrl?: string | null;
+}
+
+// Email activity input for saving
+export interface SaveEmailActivityInput {
+  prospectEmail: string;
+  prospectName: string;
+  prospectCompany: string;
+  subject: string;
+  body: string;
+  tone: string;
+  length: string;
+  status: string;
+  emailProvider?: string;
+}
 
 export interface IStorage {
   // User profile operations
@@ -53,20 +74,28 @@ export interface IStorage {
   
   // CRM operations
   getCrmConnections(): Promise<CrmConnection[]>;
-  getCrmConnection(provider: CrmProvider): Promise<CrmConnection | null>;
-  saveCrmConnection(provider: CrmProvider, data: {
+  getCrmConnection(provider: CrmProvider | string): Promise<CrmConnectionFull | null>;
+  saveCrmConnection(provider: CrmProvider | string, data: {
     accessToken?: string;
     refreshToken?: string;
     tokenExpiresAt?: Date;
     accountId?: string;
     accountName?: string;
+    instanceUrl?: string;
   }): Promise<CrmConnection>;
-  disconnectCrm(provider: CrmProvider): Promise<void>;
+  disconnectCrm(provider: CrmProvider | string): Promise<void>;
   
   // Prospect database operations (for CRM sync)
   saveProspects(prospects: InsertProspect[]): Promise<ProspectRecord[]>;
   getProspectsByCrmSource(source: CrmProvider): Promise<ProspectRecord[]>;
   getAllProspects(): Promise<ProspectRecord[]>;
+  
+  // Email activity operations
+  saveEmailActivity(data: SaveEmailActivityInput): Promise<EmailActivityRecord>;
+  getEmailActivities(limit?: number, offset?: number, status?: string): Promise<EmailActivityRecord[]>;
+  getEmailActivity(id: number): Promise<EmailActivityRecord | null>;
+  updateEmailActivityStatus(prospectEmail: string, subject: string, status: string, provider?: string): Promise<void>;
+  updateEmailActivityStatusById(id: number, status: string): Promise<void>;
   
   // Sequence operations
   createSequence(data: CreateSequenceRequest): Promise<SequenceWithSteps>;
@@ -231,7 +260,7 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getCrmConnection(provider: CrmProvider): Promise<CrmConnection | null> {
+  async getCrmConnection(provider: CrmProvider | string): Promise<CrmConnectionFull | null> {
     const [connection] = await db.select()
       .from(crmConnections)
       .where(eq(crmConnections.provider, provider))
@@ -245,27 +274,34 @@ export class DatabaseStorage implements IStorage {
       accountName: connection.accountName,
       isActive: connection.isActive === "true",
       lastSyncAt: connection.lastSyncAt,
+      accessToken: connection.accessToken,
+      refreshToken: connection.refreshToken,
+      instanceUrl: connection.accountId, // Using accountId to store instance URL for Salesforce
     };
   }
 
-  async saveCrmConnection(provider: CrmProvider, data: {
+  async saveCrmConnection(provider: CrmProvider | string, data: {
     accessToken?: string;
     refreshToken?: string;
     tokenExpiresAt?: Date;
     accountId?: string;
     accountName?: string;
+    instanceUrl?: string;
   }): Promise<CrmConnection> {
     const [existing] = await db.select()
       .from(crmConnections)
       .where(eq(crmConnections.provider, provider))
       .limit(1);
     
+    // For Salesforce, store instanceUrl in accountId field
+    const accountIdValue = data.instanceUrl || data.accountId || null;
+    
     const connectionData = {
       provider,
       accessToken: data.accessToken || null,
       refreshToken: data.refreshToken || null,
       tokenExpiresAt: data.tokenExpiresAt || null,
-      accountId: data.accountId || null,
+      accountId: accountIdValue,
       accountName: data.accountName || null,
       isActive: "true",
       updatedAt: new Date(),
@@ -292,7 +328,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async disconnectCrm(provider: CrmProvider): Promise<void> {
+  async disconnectCrm(provider: CrmProvider | string): Promise<void> {
     await db.update(crmConnections)
       .set({ isActive: "false", updatedAt: new Date() })
       .where(eq(crmConnections.provider, provider));
@@ -323,6 +359,84 @@ export class DatabaseStorage implements IStorage {
     return db.select()
       .from(prospects)
       .orderBy(desc(prospects.createdAt));
+  }
+
+  // ============================================
+  // Email Activity Operations
+  // ============================================
+
+  async saveEmailActivity(data: SaveEmailActivityInput): Promise<EmailActivityRecord> {
+    // First, try to find a matching prospect
+    const [prospect] = await db.select()
+      .from(prospects)
+      .where(eq(prospects.email, data.prospectEmail))
+      .limit(1);
+    
+    const [activity] = await db.insert(emailActivities)
+      .values({
+        prospectId: prospect?.id || 1, // Use prospect ID or default
+        subject: data.subject,
+        body: data.body,
+        tone: data.tone,
+        length: data.length,
+        status: data.status,
+      })
+      .returning();
+    
+    return activity;
+  }
+
+  async getEmailActivities(limit: number = 50, offset: number = 0, status?: string): Promise<EmailActivityRecord[]> {
+    if (status) {
+      return db.select()
+        .from(emailActivities)
+        .where(eq(emailActivities.status, status))
+        .orderBy(desc(emailActivities.createdAt))
+        .limit(limit)
+        .offset(offset);
+    }
+    
+    return db.select()
+      .from(emailActivities)
+      .orderBy(desc(emailActivities.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getEmailActivity(id: number): Promise<EmailActivityRecord | null> {
+    const [activity] = await db.select()
+      .from(emailActivities)
+      .where(eq(emailActivities.id, id))
+      .limit(1);
+    
+    return activity || null;
+  }
+
+  async updateEmailActivityStatus(prospectEmail: string, subject: string, status: string, provider?: string): Promise<void> {
+    // Find the most recent email activity with matching subject
+    const [activity] = await db.select()
+      .from(emailActivities)
+      .where(eq(emailActivities.subject, subject))
+      .orderBy(desc(emailActivities.createdAt))
+      .limit(1);
+    
+    if (activity) {
+      await db.update(emailActivities)
+        .set({ 
+          status, 
+          sentAt: status === "sent" ? new Date() : undefined,
+        })
+        .where(eq(emailActivities.id, activity.id));
+    }
+  }
+
+  async updateEmailActivityStatusById(id: number, status: string): Promise<void> {
+    await db.update(emailActivities)
+      .set({ 
+        status, 
+        sentAt: status === "sent" ? new Date() : undefined,
+      })
+      .where(eq(emailActivities.id, id));
   }
 
   // ============================================

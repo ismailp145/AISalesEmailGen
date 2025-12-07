@@ -50,6 +50,7 @@ const formSchema = z.object({
   title: z.string().min(1, "Required"),
   email: z.string().email("Invalid email"),
   linkedinUrl: z.string().url("Invalid URL").optional().or(z.literal("")),
+  linkedinContent: z.string().optional(),
   notes: z.string().optional(),
   tone: z.enum(["casual", "professional", "hyper-personal"]),
   length: z.enum(["short", "medium"]),
@@ -92,6 +93,8 @@ export function SingleEmailForm() {
   const [showTriggers, setShowTriggers] = useState(false);
   const { toast } = useToast();
 
+  const [showLinkedInContent, setShowLinkedInContent] = useState(false);
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -101,6 +104,7 @@ export function SingleEmailForm() {
       title: "",
       email: "",
       linkedinUrl: "",
+      linkedinContent: "",
       notes: "",
       tone: "professional",
       length: "medium",
@@ -156,6 +160,7 @@ export function SingleEmailForm() {
         tone: data.tone,
         length: data.length,
         triggers: selectedTriggers.length > 0 ? selectedTriggers : undefined,
+        linkedinContent: data.linkedinContent || undefined,
       });
       return response.json() as Promise<GeneratedEmail>;
     },
@@ -420,6 +425,64 @@ export function SingleEmailForm() {
                   )}
                 />
               </div>
+
+              {/* LinkedIn Profile Data Section */}
+              <Collapsible open={showLinkedInContent} onOpenChange={setShowLinkedInContent}>
+                <CollapsibleTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    type="button" 
+                    className="w-full justify-between h-9 text-xs"
+                    data-testid="button-toggle-linkedin"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Linkedin className="w-4 h-4" />
+                      LinkedIn Profile Data
+                      {form.watch("linkedinContent") && (
+                        <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs">
+                          Added
+                        </Badge>
+                      )}
+                    </div>
+                    {showLinkedInContent ? (
+                      <X className="w-4 h-4" />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Click to expand</span>
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-3">
+                  <FormField
+                    control={form.control}
+                    name="linkedinContent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Paste LinkedIn profile content here...
+
+Include their:
+• Headline and current role
+• About section
+• Recent posts or articles
+• Experience highlights
+• Skills or certifications
+
+This helps generate hyper-personalized emails."
+                            className="resize-none min-h-[150px] text-sm"
+                            {...field}
+                            data-testid="textarea-linkedin-content"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Copy and paste content from their LinkedIn profile for deeper personalization.
+                        </p>
+                      </FormItem>
+                    )}
+                  />
+                </CollapsibleContent>
+              </Collapsible>
 
               <FormField
                 control={form.control}

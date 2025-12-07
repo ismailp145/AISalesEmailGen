@@ -10,6 +10,7 @@ import { relations } from "drizzle-orm";
 // User profiles table - stores sender/company info
 export const userProfiles = pgTable("user_profiles", {
   id: serial("id").primaryKey(),
+  userId: text("user_id"), // Clerk user ID
   senderName: text("sender_name").notNull(),
   senderTitle: text("sender_title"),
   senderEmail: text("sender_email"),
@@ -33,12 +34,14 @@ export const userProfiles = pgTable("user_profiles", {
 // Prospects table - stores prospect data (can be from CSV or CRM)
 export const prospects = pgTable("prospects", {
   id: serial("id").primaryKey(),
+  userId: text("user_id"), // Clerk user ID
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   email: text("email").notNull(),
   company: text("company").notNull(),
   title: text("title").notNull(),
   linkedinUrl: text("linkedin_url"),
+  linkedinContent: text("linkedin_content"), // Pasted LinkedIn profile data
   notes: text("notes"),
   crmId: text("crm_id"), // ID from HubSpot/Salesforce
   crmSource: text("crm_source"), // 'hubspot', 'salesforce', 'pipedrive', 'csv'
@@ -50,12 +53,14 @@ export const prospects = pgTable("prospects", {
 // Email activities table - tracks generated/sent emails
 export const emailActivities = pgTable("email_activities", {
   id: serial("id").primaryKey(),
+  userId: text("user_id"), // Clerk user ID
   prospectId: serial("prospect_id").references(() => prospects.id),
   subject: text("subject").notNull(),
   body: text("body").notNull(),
   tone: text("tone").notNull(),
   length: text("length").notNull(),
   status: text("status").notNull().default("generated"), // 'generated', 'sent', 'opened', 'replied'
+  emailProvider: text("email_provider"), // 'sendgrid', 'gmail', 'outlook'
   sentAt: timestamp("sent_at"),
   crmActivityId: text("crm_activity_id"), // ID of activity pushed to CRM
   crmSyncedAt: timestamp("crm_synced_at"),
@@ -65,11 +70,12 @@ export const emailActivities = pgTable("email_activities", {
 // CRM connections table - stores OAuth tokens and connection state
 export const crmConnections = pgTable("crm_connections", {
   id: serial("id").primaryKey(),
-  provider: text("provider").notNull(), // 'hubspot', 'salesforce', 'pipedrive'
+  userId: text("user_id"), // Clerk user ID
+  provider: text("provider").notNull(), // 'hubspot', 'salesforce', 'pipedrive', 'gmail', 'outlook'
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
   tokenExpiresAt: timestamp("token_expires_at"),
-  accountId: text("account_id"), // HubSpot portal ID, Salesforce org ID, etc.
+  accountId: text("account_id"), // HubSpot portal ID, Salesforce instance URL, etc.
   accountName: text("account_name"),
   isActive: text("is_active").notNull().default("true"),
   lastSyncAt: timestamp("last_sync_at"),
@@ -85,6 +91,7 @@ export const crmConnections = pgTable("crm_connections", {
 // Sequences table - the sequence template
 export const sequences = pgTable("sequences", {
   id: serial("id").primaryKey(),
+  userId: text("user_id"), // Clerk user ID
   name: text("name").notNull(),
   description: text("description"),
   status: text("status").notNull().default("draft"), // 'draft', 'active', 'paused', 'archived'
