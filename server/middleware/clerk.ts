@@ -1,7 +1,15 @@
 import { clerkMiddleware, requireAuth, getAuth } from "@clerk/express";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
-export const clerkAuthMiddleware = clerkMiddleware();
+// Explicitly configure Clerk with environment variables
+const publishableKey = process.env.CLERK_PUBLISHABLE_KEY;
+const secretKey = process.env.CLERK_SECRET_KEY;
+
+// Configure clerkMiddleware with explicit keys
+export const clerkAuthMiddleware = clerkMiddleware({
+  publishableKey: publishableKey,
+  secretKey: secretKey,
+});
 
 export const requireAuthentication: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
   const auth = getAuth(req);
