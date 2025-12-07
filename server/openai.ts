@@ -12,9 +12,12 @@ const openrouter = createOpenAI({
 
 // Fallback to direct OpenAI if OPENROUTER_API_KEY is not set
 const useOpenRouter = !!process.env.OPENROUTER_API_KEY;
+const useAIIntegrations = !process.env.OPENAI_API_KEY && !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 const provider = useOpenRouter ? openrouter : createOpenAI({
   apiKey: process.env.OPENAI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "",
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.openai.com/v1",
+  baseURL: useAIIntegrations && process.env.AI_INTEGRATIONS_OPENAI_BASE_URL 
+    ? process.env.AI_INTEGRATIONS_OPENAI_BASE_URL 
+    : "https://api.openai.com/v1",
 });
 
 console.log(`[AI] Using ${useOpenRouter ? "OpenRouter" : "OpenAI"} provider`);
