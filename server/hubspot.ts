@@ -4,6 +4,9 @@
 
 import type { InsertProspect, ProspectRecord } from "@shared/schema";
 
+// Prospect data from CRM (userId is added by the caller when saving)
+export type CrmProspectData = Omit<InsertProspect, 'userId'>;
+
 interface HubSpotContact {
   id: string;
   properties: {
@@ -91,7 +94,7 @@ export class HubSpotService {
   }
 
   // Fetch contacts from HubSpot with pagination
-  async getContacts(maxContacts: number = 100): Promise<InsertProspect[]> {
+  async getContacts(maxContacts: number = 100): Promise<CrmProspectData[]> {
     const properties = [
       "email",
       "firstname",
@@ -101,7 +104,7 @@ export class HubSpotService {
       "hs_linkedin_url",
     ].join(",");
 
-    const prospects: InsertProspect[] = [];
+    const prospects: CrmProspectData[] = [];
     let after: string | undefined;
     const pageSize = Math.min(100, maxContacts); // HubSpot max is 100 per page
     
@@ -147,7 +150,7 @@ export class HubSpotService {
   }
 
   // Search contacts by criteria
-  async searchContacts(query: string): Promise<InsertProspect[]> {
+  async searchContacts(query: string): Promise<CrmProspectData[]> {
     const response = await this.request<HubSpotContactsResponse>(
       "/crm/v3/objects/contacts/search",
       {

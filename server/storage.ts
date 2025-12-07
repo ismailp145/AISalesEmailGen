@@ -44,6 +44,7 @@ export interface CrmConnectionFull extends CrmConnection {
 
 // Email activity input for saving
 export interface SaveEmailActivityInput {
+  userId: string;
   prospectEmail: string;
   prospectName: string;
   prospectCompany: string;
@@ -73,9 +74,9 @@ export interface IStorage {
   getProspect(campaignId: string, prospectId: string): Promise<ProspectWithStatus | undefined>;
   
   // CRM operations
-  getCrmConnections(): Promise<CrmConnection[]>;
-  getCrmConnection(provider: CrmProvider | string): Promise<CrmConnectionFull | null>;
-  saveCrmConnection(provider: CrmProvider | string, data: {
+  getCrmConnections(userId: string): Promise<CrmConnection[]>;
+  getCrmConnection(userId: string, provider: CrmProvider | string): Promise<CrmConnectionFull | null>;
+  saveCrmConnection(userId: string, provider: CrmProvider | string, data: {
     accessToken?: string;
     refreshToken?: string;
     tokenExpiresAt?: Date;
@@ -83,7 +84,7 @@ export interface IStorage {
     accountName?: string;
     instanceUrl?: string;
   }): Promise<CrmConnection>;
-  disconnectCrm(provider: CrmProvider | string): Promise<void>;
+  disconnectCrm(userId: string, provider: CrmProvider | string): Promise<void>;
   
   // Prospect database operations (for CRM sync)
   saveProspects(prospects: InsertProspect[]): Promise<ProspectRecord[]>;
@@ -92,18 +93,19 @@ export interface IStorage {
   
   // Email activity operations
   saveEmailActivity(data: SaveEmailActivityInput): Promise<EmailActivityRecord>;
-  getEmailActivities(limit?: number, offset?: number, status?: string): Promise<EmailActivityRecord[]>;
-  getEmailActivity(id: number): Promise<EmailActivityRecord | null>;
-  updateEmailActivityStatus(prospectEmail: string, subject: string, status: string, provider?: string): Promise<void>;
-  updateEmailActivityStatusById(id: number, status: string): Promise<void>;
+  getEmailActivities(userId: string, limit?: number, offset?: number, status?: string): Promise<EmailActivityRecord[]>;
+  getEmailActivity(userId: string, id: number): Promise<EmailActivityRecord | null>;
+  updateEmailActivityStatus(userId: string, prospectEmail: string, subject: string, status: string, provider?: string): Promise<void>;
+  updateEmailActivityStatusById(userId: string, id: number, status: string): Promise<void>;
   
   // Sequence operations
-  createSequence(data: CreateSequenceRequest): Promise<SequenceWithSteps>;
-  getSequence(id: number): Promise<SequenceWithSteps | null>;
-  getAllSequences(): Promise<SequenceRecord[]>;
-  updateSequence(id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null>;
-  updateSequenceStatus(id: number, status: SequenceStatus): Promise<SequenceRecord | null>;
-  deleteSequence(id: number): Promise<boolean>;
+  createSequence(userId: string, data: CreateSequenceRequest): Promise<SequenceWithSteps>;
+  getSequence(userId: string, id: number): Promise<SequenceWithSteps | null>;
+  getSequenceById(id: number): Promise<SequenceWithSteps | null>; // Internal use only (no userId check)
+  getAllSequences(userId: string): Promise<SequenceRecord[]>;
+  updateSequence(userId: string, id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null>;
+  updateSequenceStatus(userId: string, id: number, status: SequenceStatus): Promise<SequenceRecord | null>;
+  deleteSequence(userId: string, id: number): Promise<boolean>;
   
   // Sequence step operations
   getSequenceSteps(sequenceId: number): Promise<SequenceStepRecord[]>;
@@ -248,8 +250,13 @@ export class DatabaseStorage implements IStorage {
   // CRM Operations
   // ============================================
 
-  async getCrmConnections(): Promise<CrmConnection[]> {
-    const connections = await db.select().from(crmConnections).where(eq(crmConnections.isActive, "true"));
+  async getCrmConnections(userId: string): Promise<CrmConnection[]> {
+    const connections = await db.select()
+      .from(crmConnections)
+      .where(and(
+        eq(crmConnections.userId, userId),
+        eq(crmConnections.isActive, "true")
+      ));
     
     return connections.map(c => ({
       id: c.id,
@@ -260,10 +267,13 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getCrmConnection(provider: CrmProvider | string): Promise<CrmConnectionFull | null> {
+  async getCrmConnection(userId: string, provider: CrmProvider | string): Promise<CrmConnectionFull | null> {
     const [connection] = await db.select()
       .from(crmConnections)
-      .where(eq(crmConnections.provider, provider))
+      .where(and(
+        eq(crmConnections.userId, userId),
+        eq(crmConnections.provider, provider)
+      ))
       .limit(1);
     
     if (!connection) return null;
@@ -280,7 +290,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async saveCrmConnection(provider: CrmProvider | string, data: {
+  async saveCrmConnection(userId: string, provider: CrmProvider | string, data: {
     accessToken?: string;
     refreshToken?: string;
     tokenExpiresAt?: Date;
@@ -290,13 +300,17 @@ export class DatabaseStorage implements IStorage {
   }): Promise<CrmConnection> {
     const [existing] = await db.select()
       .from(crmConnections)
-      .where(eq(crmConnections.provider, provider))
+      .where(and(
+        eq(crmConnections.userId, userId),
+        eq(crmConnections.provider, provider)
+      ))
       .limit(1);
     
     // For Salesforce, store instanceUrl in accountId field
     const accountIdValue = data.instanceUrl || data.accountId || null;
     
     const connectionData = {
+      userId,
       provider,
       accessToken: data.accessToken || null,
       refreshToken: data.refreshToken || null,
@@ -328,10 +342,13 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async disconnectCrm(provider: CrmProvider | string): Promise<void> {
+  async disconnectCrm(userId: string, provider: CrmProvider | string): Promise<void> {
     await db.update(crmConnections)
       .set({ isActive: "false", updatedAt: new Date() })
-      .where(eq(crmConnections.provider, provider));
+      .where(and(
+        eq(crmConnections.userId, userId),
+        eq(crmConnections.provider, provider)
+      ));
   }
 
   // ============================================
@@ -366,31 +383,39 @@ export class DatabaseStorage implements IStorage {
   // ============================================
 
   async saveEmailActivity(data: SaveEmailActivityInput): Promise<EmailActivityRecord> {
-    // First, try to find a matching prospect by email
+    // First, try to find a matching prospect by email for this user
     const [prospect] = await db.select()
       .from(prospects)
-      .where(eq(prospects.email, data.prospectEmail))
+      .where(and(
+        eq(prospects.userId, data.userId),
+        eq(prospects.email, data.prospectEmail)
+      ))
       .limit(1);
     
     const [activity] = await db.insert(emailActivities)
       .values({
+        userId: data.userId,
         prospectId: prospect?.id ?? null, // Null if no matching prospect found
         subject: data.subject,
         body: data.body,
         tone: data.tone,
         length: data.length,
         status: data.status,
+        emailProvider: data.emailProvider || null,
       })
       .returning();
     
     return activity;
   }
 
-  async getEmailActivities(limit: number = 50, offset: number = 0, status?: string): Promise<EmailActivityRecord[]> {
+  async getEmailActivities(userId: string, limit: number = 50, offset: number = 0, status?: string): Promise<EmailActivityRecord[]> {
     if (status) {
       return db.select()
         .from(emailActivities)
-        .where(eq(emailActivities.status, status))
+        .where(and(
+          eq(emailActivities.userId, userId),
+          eq(emailActivities.status, status)
+        ))
         .orderBy(desc(emailActivities.createdAt))
         .limit(limit)
         .offset(offset);
@@ -398,54 +423,89 @@ export class DatabaseStorage implements IStorage {
     
     return db.select()
       .from(emailActivities)
+      .where(eq(emailActivities.userId, userId))
       .orderBy(desc(emailActivities.createdAt))
       .limit(limit)
       .offset(offset);
   }
 
-  async getEmailActivity(id: number): Promise<EmailActivityRecord | null> {
+  async getEmailActivity(userId: string, id: number): Promise<EmailActivityRecord | null> {
     const [activity] = await db.select()
       .from(emailActivities)
-      .where(eq(emailActivities.id, id))
+      .where(and(
+        eq(emailActivities.userId, userId),
+        eq(emailActivities.id, id)
+      ))
       .limit(1);
     
     return activity || null;
   }
 
-  async updateEmailActivityStatus(prospectEmail: string, subject: string, status: string, provider?: string): Promise<void> {
-    // Find the most recent email activity with matching subject
-    const [activity] = await db.select()
+  async updateEmailActivityStatus(userId: string, prospectEmail: string, subject: string, status: string, provider?: string): Promise<void> {
+    // Find the most recent email activity matching userId, subject, and prospect email
+    // Join with prospects to match by email address
+    const activitiesWithProspect = await db.select({
+      activity: emailActivities
+    })
       .from(emailActivities)
-      .where(eq(emailActivities.subject, subject))
+      .leftJoin(prospects, eq(emailActivities.prospectId, prospects.id))
+      .where(and(
+        eq(emailActivities.userId, userId),
+        eq(emailActivities.subject, subject),
+        // Match either via prospect email or if no prospect, any matching subject
+        prospects.email ? eq(prospects.email, prospectEmail) : undefined
+      ))
       .orderBy(desc(emailActivities.createdAt))
       .limit(1);
     
-    if (activity) {
+    // If no match with prospect, try matching just by userId and subject (for emails without linked prospect)
+    let activityId: number | null = activitiesWithProspect[0]?.activity.id ?? null;
+    
+    if (!activityId) {
+      const [fallbackActivity] = await db.select()
+        .from(emailActivities)
+        .where(and(
+          eq(emailActivities.userId, userId),
+          eq(emailActivities.subject, subject)
+        ))
+        .orderBy(desc(emailActivities.createdAt))
+        .limit(1);
+      
+      activityId = fallbackActivity?.id ?? null;
+    }
+    
+    if (activityId) {
       await db.update(emailActivities)
         .set({ 
           status, 
           sentAt: status === "sent" ? new Date() : undefined,
+          emailProvider: provider || undefined,
         })
-        .where(eq(emailActivities.id, activity.id));
+        .where(eq(emailActivities.id, activityId));
     }
   }
 
-  async updateEmailActivityStatusById(id: number, status: string): Promise<void> {
+  async updateEmailActivityStatusById(userId: string, id: number, status: string): Promise<void> {
+    // Only update if the activity belongs to the user
     await db.update(emailActivities)
       .set({ 
         status, 
         sentAt: status === "sent" ? new Date() : undefined,
       })
-      .where(eq(emailActivities.id, id));
+      .where(and(
+        eq(emailActivities.userId, userId),
+        eq(emailActivities.id, id)
+      ));
   }
 
   // ============================================
   // Sequence Operations
   // ============================================
 
-  async createSequence(data: CreateSequenceRequest): Promise<SequenceWithSteps> {
+  async createSequence(userId: string, data: CreateSequenceRequest): Promise<SequenceWithSteps> {
     const [sequence] = await db.insert(sequences)
       .values({
+        userId,
         name: data.name,
         description: data.description || null,
         tone: data.tone,
@@ -472,7 +532,27 @@ export class DatabaseStorage implements IStorage {
     return { ...sequence, steps };
   }
 
-  async getSequence(id: number): Promise<SequenceWithSteps | null> {
+  async getSequence(userId: string, id: number): Promise<SequenceWithSteps | null> {
+    const [sequence] = await db.select()
+      .from(sequences)
+      .where(and(
+        eq(sequences.userId, userId),
+        eq(sequences.id, id)
+      ))
+      .limit(1);
+
+    if (!sequence) return null;
+
+    const steps = await db.select()
+      .from(sequenceSteps)
+      .where(eq(sequenceSteps.sequenceId, id))
+      .orderBy(sequenceSteps.stepNumber);
+
+    return { ...sequence, steps };
+  }
+
+  // Internal method - no userId check (for background processing like scheduler)
+  async getSequenceById(id: number): Promise<SequenceWithSteps | null> {
     const [sequence] = await db.select()
       .from(sequences)
       .where(eq(sequences.id, id))
@@ -488,33 +568,43 @@ export class DatabaseStorage implements IStorage {
     return { ...sequence, steps };
   }
 
-  async getAllSequences(): Promise<SequenceRecord[]> {
+  async getAllSequences(userId: string): Promise<SequenceRecord[]> {
     return db.select()
       .from(sequences)
+      .where(eq(sequences.userId, userId))
       .orderBy(desc(sequences.createdAt));
   }
 
-  async updateSequence(id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null> {
+  async updateSequence(userId: string, id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null> {
     const [updated] = await db.update(sequences)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(sequences.id, id))
+      .where(and(
+        eq(sequences.userId, userId),
+        eq(sequences.id, id)
+      ))
       .returning();
     
     return updated || null;
   }
 
-  async updateSequenceStatus(id: number, status: SequenceStatus): Promise<SequenceRecord | null> {
+  async updateSequenceStatus(userId: string, id: number, status: SequenceStatus): Promise<SequenceRecord | null> {
     const [updated] = await db.update(sequences)
       .set({ status, updatedAt: new Date() })
-      .where(eq(sequences.id, id))
+      .where(and(
+        eq(sequences.userId, userId),
+        eq(sequences.id, id)
+      ))
       .returning();
     
     return updated || null;
   }
 
-  async deleteSequence(id: number): Promise<boolean> {
+  async deleteSequence(userId: string, id: number): Promise<boolean> {
     const result = await db.delete(sequences)
-      .where(eq(sequences.id, id))
+      .where(and(
+        eq(sequences.userId, userId),
+        eq(sequences.id, id)
+      ))
       .returning();
     
     return result.length > 0;

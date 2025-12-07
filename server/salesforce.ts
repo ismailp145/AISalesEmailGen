@@ -4,6 +4,9 @@
 
 import type { InsertProspect } from "@shared/schema";
 
+// Prospect data from CRM (userId is added by the caller when saving)
+export type CrmProspectData = Omit<InsertProspect, 'userId'>;
+
 interface SalesforceTokenResponse {
   access_token: string;
   refresh_token: string;
@@ -210,7 +213,7 @@ export class SalesforceService {
   }
 
   // Fetch contacts from Salesforce
-  async getContacts(maxContacts: number = 100): Promise<InsertProspect[]> {
+  async getContacts(maxContacts: number = 100): Promise<CrmProspectData[]> {
     const query = `
       SELECT Id, Email, FirstName, LastName, Title, Account.Name, Description
       FROM Contact
@@ -238,7 +241,7 @@ export class SalesforceService {
   }
 
   // Search contacts by query
-  async searchContacts(searchQuery: string): Promise<InsertProspect[]> {
+  async searchContacts(searchQuery: string): Promise<CrmProspectData[]> {
     const sosl = `
       FIND {${searchQuery}*} IN ALL FIELDS
       RETURNING Contact(Id, Email, FirstName, LastName, Title, Account.Name, Description)

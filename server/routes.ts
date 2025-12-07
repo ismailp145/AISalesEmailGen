@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { generateEmail, generateEmailsBatch, detectTriggers } from "./openai";
 import { sendEmail, isSendGridConfigured, initSendGrid } from "./sendgrid";
@@ -7,6 +7,7 @@ import { SalesforceService, createSalesforceService, isSalesforceConfigured } fr
 import { GmailService, createGmailService, isGmailConfigured } from "./gmail";
 import { OutlookService, createOutlookService, isOutlookConfigured } from "./outlook";
 import { storage } from "./storage";
+import { getCurrentUserId } from "./middleware/clerk";
 import { 
   generateEmailRequestSchema, 
   bulkGenerateRequestSchema, 
@@ -20,6 +21,15 @@ import {
   type EnrollmentStatus,
 } from "@shared/schema";
 import { z } from "zod";
+
+// Default user ID when authentication is not configured
+const DEFAULT_USER_ID = "anonymous";
+
+// Helper to get user ID with fallback for unauthenticated scenarios
+function getUserIdOrDefault(req: Request): string {
+  const userId = getCurrentUserId(req);
+  return userId || DEFAULT_USER_ID;
+}
 
 // Initialize SendGrid on module load
 initSendGrid();
@@ -104,7 +114,9 @@ export async function registerRoutes(
       
       // Save to email activities table
       try {
+        const userId = getUserIdOrDefault(req);
         await storage.saveEmailActivity({
+          userId,
           prospectEmail: prospect.email,
           prospectName: `${prospect.firstName} ${prospect.lastName}`,
           prospectCompany: prospect.company,
@@ -212,11 +224,13 @@ export async function registerRoutes(
       }));
 
       // Save all generated emails
+      const userId = getUserIdOrDefault(req);
       for (let i = 0; i < response.length; i++) {
         const item = response[i];
         if (item.email) {
           try {
             await storage.saveEmailActivity({
+              userId,
               prospectEmail: item.prospect.email,
               prospectName: `${item.prospect.firstName} ${item.prospect.lastName}`,
               prospectCompany: item.prospect.company,
@@ -260,11 +274,12 @@ export async function registerRoutes(
 
       const { to, from, subject, body, provider } = parsed.data;
       
+      const userId = getUserIdOrDefault(req);
       let result: { success: boolean; error?: string; messageId?: string };
 
       if (provider === "gmail") {
         // Get Gmail connection
-        const connection = await storage.getCrmConnection("gmail" as any);
+        const connection = await storage.getCrmConnection(userId, "gmail" as any);
         if (!connection || !connection.accessToken) {
           return res.status(503).json({
             error: "Gmail not connected",
@@ -276,7 +291,7 @@ export async function registerRoutes(
         result = await gmail.sendEmail({ to, from, subject, body });
       } else if (provider === "outlook") {
         // Get Outlook connection
-        const connection = await storage.getCrmConnection("outlook" as any);
+        const connection = await storage.getCrmConnection(userId, "outlook" as any);
         if (!connection || !connection.accessToken) {
           return res.status(503).json({
             error: "Outlook not connected",
@@ -306,7 +321,7 @@ export async function registerRoutes(
 
       // Update email status in database
       try {
-        await storage.updateEmailActivityStatus(to, subject, "sent", provider);
+        await storage.updateEmailActivityStatus(userId, to, subject, "sent", provider);
       } catch (updateError) {
         console.error("Failed to update email status:", updateError);
       }
@@ -328,11 +343,12 @@ export async function registerRoutes(
   // Get all email activities
   app.get("/api/emails", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
       const status = req.query.status as string | undefined;
       
-      const emails = await storage.getEmailActivities(limit, offset, status);
+      const emails = await storage.getEmailActivities(userId, limit, offset, status);
       return res.json(emails);
     } catch (error: any) {
       console.error("Get emails error:", error);
@@ -346,12 +362,13 @@ export async function registerRoutes(
   // Get single email activity
   app.get("/api/emails/:id", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid email ID" });
       }
 
-      const email = await storage.getEmailActivity(id);
+      const email = await storage.getEmailActivity(userId, id);
       if (!email) {
         return res.status(404).json({ error: "Email not found" });
       }
@@ -369,6 +386,7 @@ export async function registerRoutes(
   // Update email status
   app.patch("/api/emails/:id", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid email ID" });
@@ -386,7 +404,7 @@ export async function registerRoutes(
         });
       }
 
-      await storage.updateEmailActivityStatusById(id, parsed.data.status);
+      await storage.updateEmailActivityStatusById(userId, id, parsed.data.status);
       return res.json({ success: true });
     } catch (error: any) {
       console.error("Update email error:", error);
@@ -445,7 +463,8 @@ export async function registerRoutes(
   // Get all CRM connections
   app.get("/api/crm/connections", async (req, res) => {
     try {
-      const connections = await storage.getCrmConnections();
+      const userId = getUserIdOrDefault(req);
+      const connections = await storage.getCrmConnections(userId);
       
       return res.json({
         connections,
@@ -472,6 +491,7 @@ export async function registerRoutes(
   // Test and connect HubSpot
   app.post("/api/crm/hubspot/connect", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const hubspot = createHubSpotService();
       
       if (!hubspot) {
@@ -491,7 +511,7 @@ export async function registerRoutes(
       }
 
       // Save connection to database
-      const connection = await storage.saveCrmConnection("hubspot", {
+      const connection = await storage.saveCrmConnection(userId, "hubspot", {
         accountName: result.accountName,
       });
 
@@ -511,7 +531,8 @@ export async function registerRoutes(
   // Disconnect HubSpot
   app.post("/api/crm/hubspot/disconnect", async (req, res) => {
     try {
-      await storage.disconnectCrm("hubspot");
+      const userId = getUserIdOrDefault(req);
+      await storage.disconnectCrm(userId, "hubspot");
       return res.json({ success: true });
     } catch (error: any) {
       console.error("HubSpot disconnect error:", error);
@@ -525,6 +546,7 @@ export async function registerRoutes(
   // Sync contacts from HubSpot
   app.post("/api/crm/hubspot/sync", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const hubspot = createHubSpotService();
       
       if (!hubspot) {
@@ -545,8 +567,11 @@ export async function registerRoutes(
         });
       }
 
+      // Add userId to each contact before saving
+      const contactsWithUserId = contacts.map(c => ({ ...c, userId }));
+      
       // Save contacts to database
-      const saved = await storage.saveProspects(contacts);
+      const saved = await storage.saveProspects(contactsWithUserId);
 
       return res.json({
         success: true,
@@ -662,9 +687,11 @@ export async function registerRoutes(
         });
       }
 
+      const userId = getUserIdOrDefault(req);
       const baseUrl = getBaseUrl(req);
       const redirectUri = `${baseUrl}/api/crm/salesforce/callback`;
-      const authUrl = SalesforceService.getAuthUrl(redirectUri);
+      // Pass userId in state parameter for OAuth callback
+      const authUrl = SalesforceService.getAuthUrl(redirectUri) + `&state=${encodeURIComponent(userId)}`;
       
       return res.json({ authUrl });
     } catch (error: any) {
@@ -681,6 +708,7 @@ export async function registerRoutes(
     try {
       const code = req.query.code as string;
       const error = req.query.error as string;
+      const state = req.query.state as string; // Contains userId
 
       if (error) {
         return res.redirect(`/integrations?error=${encodeURIComponent(error)}`);
@@ -689,6 +717,9 @@ export async function registerRoutes(
       if (!code) {
         return res.redirect("/integrations?error=No authorization code received");
       }
+
+      // Get userId from state parameter, fallback to default
+      const userId = state || getUserIdOrDefault(req);
 
       const baseUrl = getBaseUrl(req);
       const redirectUri = `${baseUrl}/api/crm/salesforce/callback`;
@@ -709,7 +740,7 @@ export async function registerRoutes(
       }
 
       // Save connection - instanceUrl is required for Salesforce API calls
-      await storage.saveCrmConnection("salesforce", {
+      await storage.saveCrmConnection(userId, "salesforce", {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         accountName: testResult.accountName,
@@ -726,7 +757,8 @@ export async function registerRoutes(
   // Disconnect Salesforce
   app.post("/api/crm/salesforce/disconnect", async (req, res) => {
     try {
-      await storage.disconnectCrm("salesforce");
+      const userId = getUserIdOrDefault(req);
+      await storage.disconnectCrm(userId, "salesforce");
       return res.json({ success: true });
     } catch (error: any) {
       console.error("Salesforce disconnect error:", error);
@@ -740,7 +772,8 @@ export async function registerRoutes(
   // Sync contacts from Salesforce
   app.post("/api/crm/salesforce/sync", async (req, res) => {
     try {
-      const connection = await storage.getCrmConnection("salesforce");
+      const userId = getUserIdOrDefault(req);
+      const connection = await storage.getCrmConnection(userId, "salesforce");
       
       if (!connection || !connection.accessToken) {
         return res.status(400).json({
@@ -766,7 +799,10 @@ export async function registerRoutes(
         });
       }
 
-      const saved = await storage.saveProspects(contacts);
+      // Add userId to each contact before saving
+      const contactsWithUserId = contacts.map(c => ({ ...c, userId }));
+      
+      const saved = await storage.saveProspects(contactsWithUserId);
 
       return res.json({
         success: true,
@@ -785,7 +821,8 @@ export async function registerRoutes(
   // Log email activity to Salesforce
   app.post("/api/crm/salesforce/log-activity", async (req, res) => {
     try {
-      const connection = await storage.getCrmConnection("salesforce");
+      const userId = getUserIdOrDefault(req);
+      const connection = await storage.getCrmConnection(userId, "salesforce");
       
       if (!connection || !connection.accessToken) {
         return res.status(400).json({
@@ -857,9 +894,11 @@ export async function registerRoutes(
         });
       }
 
+      const userId = getUserIdOrDefault(req);
       const baseUrl = getBaseUrl(req);
       const redirectUri = `${baseUrl}/api/email/gmail/callback`;
-      const authUrl = GmailService.getAuthUrl(redirectUri);
+      // Pass userId in state parameter for OAuth callback
+      const authUrl = GmailService.getAuthUrl(redirectUri) + `&state=${encodeURIComponent(userId)}`;
       
       return res.json({ authUrl });
     } catch (error: any) {
@@ -876,6 +915,7 @@ export async function registerRoutes(
     try {
       const code = req.query.code as string;
       const error = req.query.error as string;
+      const state = req.query.state as string; // Contains userId
 
       if (error) {
         return res.redirect(`/integrations?error=${encodeURIComponent(error)}`);
@@ -884,6 +924,9 @@ export async function registerRoutes(
       if (!code) {
         return res.redirect("/integrations?error=No authorization code received");
       }
+
+      // Get userId from state parameter, fallback to default
+      const userId = state || getUserIdOrDefault(req);
 
       const baseUrl = getBaseUrl(req);
       const redirectUri = `${baseUrl}/api/email/gmail/callback`;
@@ -899,7 +942,7 @@ export async function registerRoutes(
       }
 
       // Save connection (using 'gmail' as provider in crmConnections)
-      await storage.saveCrmConnection("gmail" as CrmProvider, {
+      await storage.saveCrmConnection(userId, "gmail" as CrmProvider, {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         accountName: testResult.email,
@@ -916,7 +959,8 @@ export async function registerRoutes(
   // Disconnect Gmail
   app.post("/api/email/gmail/disconnect", async (req, res) => {
     try {
-      await storage.disconnectCrm("gmail" as CrmProvider);
+      const userId = getUserIdOrDefault(req);
+      await storage.disconnectCrm(userId, "gmail" as CrmProvider);
       return res.json({ success: true });
     } catch (error: any) {
       console.error("Gmail disconnect error:", error);
@@ -930,7 +974,8 @@ export async function registerRoutes(
   // Send email via Gmail
   app.post("/api/email/gmail/send", async (req, res) => {
     try {
-      const connection = await storage.getCrmConnection("gmail" as CrmProvider);
+      const userId = getUserIdOrDefault(req);
+      const connection = await storage.getCrmConnection(userId, "gmail" as CrmProvider);
       
       if (!connection || !connection.accessToken) {
         return res.status(400).json({
@@ -1001,9 +1046,11 @@ export async function registerRoutes(
         });
       }
 
+      const userId = getUserIdOrDefault(req);
       const baseUrl = getBaseUrl(req);
       const redirectUri = `${baseUrl}/api/email/outlook/callback`;
-      const authUrl = OutlookService.getAuthUrl(redirectUri);
+      // Pass userId in state parameter for OAuth callback
+      const authUrl = OutlookService.getAuthUrl(redirectUri) + `&state=${encodeURIComponent(userId)}`;
       
       return res.json({ authUrl });
     } catch (error: any) {
@@ -1020,6 +1067,7 @@ export async function registerRoutes(
     try {
       const code = req.query.code as string;
       const error = req.query.error as string;
+      const state = req.query.state as string; // Contains userId
 
       if (error) {
         return res.redirect(`/integrations?error=${encodeURIComponent(error)}`);
@@ -1028,6 +1076,9 @@ export async function registerRoutes(
       if (!code) {
         return res.redirect("/integrations?error=No authorization code received");
       }
+
+      // Get userId from state parameter, fallback to default
+      const userId = state || getUserIdOrDefault(req);
 
       const baseUrl = getBaseUrl(req);
       const redirectUri = `${baseUrl}/api/email/outlook/callback`;
@@ -1043,7 +1094,7 @@ export async function registerRoutes(
       }
 
       // Save connection (using 'outlook' as provider in crmConnections)
-      await storage.saveCrmConnection("outlook" as CrmProvider, {
+      await storage.saveCrmConnection(userId, "outlook" as CrmProvider, {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         accountName: testResult.email,
@@ -1060,7 +1111,8 @@ export async function registerRoutes(
   // Disconnect Outlook
   app.post("/api/email/outlook/disconnect", async (req, res) => {
     try {
-      await storage.disconnectCrm("outlook" as CrmProvider);
+      const userId = getUserIdOrDefault(req);
+      await storage.disconnectCrm(userId, "outlook" as CrmProvider);
       return res.json({ success: true });
     } catch (error: any) {
       console.error("Outlook disconnect error:", error);
@@ -1074,7 +1126,8 @@ export async function registerRoutes(
   // Send email via Outlook
   app.post("/api/email/outlook/send", async (req, res) => {
     try {
-      const connection = await storage.getCrmConnection("outlook" as CrmProvider);
+      const userId = getUserIdOrDefault(req);
+      const connection = await storage.getCrmConnection(userId, "outlook" as CrmProvider);
       
       if (!connection || !connection.accessToken) {
         return res.status(400).json({
@@ -1160,7 +1213,8 @@ export async function registerRoutes(
   // Get all sequences
   app.get("/api/sequences", async (req, res) => {
     try {
-      const sequences = await storage.getAllSequences();
+      const userId = getUserIdOrDefault(req);
+      const sequences = await storage.getAllSequences(userId);
       return res.json(sequences);
     } catch (error: any) {
       console.error("Get sequences error:", error);
@@ -1174,6 +1228,7 @@ export async function registerRoutes(
   // Create a new sequence
   app.post("/api/sequences", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const parsed = createSequenceRequestSchema.safeParse(req.body);
       
       if (!parsed.success) {
@@ -1183,7 +1238,7 @@ export async function registerRoutes(
         });
       }
 
-      const sequence = await storage.createSequence(parsed.data);
+      const sequence = await storage.createSequence(userId, parsed.data);
       return res.status(201).json(sequence);
     } catch (error: any) {
       console.error("Create sequence error:", error);
@@ -1197,12 +1252,13 @@ export async function registerRoutes(
   // Get a single sequence with steps
   app.get("/api/sequences/:id", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid sequence ID" });
       }
 
-      const sequence = await storage.getSequence(id);
+      const sequence = await storage.getSequence(userId, id);
       if (!sequence) {
         return res.status(404).json({ error: "Sequence not found" });
       }
@@ -1220,6 +1276,7 @@ export async function registerRoutes(
   // Update a sequence
   app.patch("/api/sequences/:id", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid sequence ID" });
@@ -1238,7 +1295,7 @@ export async function registerRoutes(
 
       // Update sequence data
       if (Object.keys(sequenceData).length > 0) {
-        await storage.updateSequence(id, sequenceData);
+        await storage.updateSequence(userId, id, sequenceData);
       }
 
       // Update steps if provided
@@ -1255,7 +1312,7 @@ export async function registerRoutes(
         })));
       }
 
-      const updated = await storage.getSequence(id);
+      const updated = await storage.getSequence(userId, id);
       return res.json(updated);
     } catch (error: any) {
       console.error("Update sequence error:", error);
@@ -1269,6 +1326,7 @@ export async function registerRoutes(
   // Update sequence status (activate/pause/archive)
   app.patch("/api/sequences/:id/status", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid sequence ID" });
@@ -1286,7 +1344,7 @@ export async function registerRoutes(
         });
       }
 
-      const sequence = await storage.updateSequenceStatus(id, parsed.data.status as SequenceStatus);
+      const sequence = await storage.updateSequenceStatus(userId, id, parsed.data.status as SequenceStatus);
       if (!sequence) {
         return res.status(404).json({ error: "Sequence not found" });
       }
@@ -1304,12 +1362,13 @@ export async function registerRoutes(
   // Delete a sequence
   app.delete("/api/sequences/:id", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid sequence ID" });
       }
 
-      const deleted = await storage.deleteSequence(id);
+      const deleted = await storage.deleteSequence(userId, id);
       if (!deleted) {
         return res.status(404).json({ error: "Sequence not found" });
       }
@@ -1350,6 +1409,7 @@ export async function registerRoutes(
   // Enroll prospects in a sequence
   app.post("/api/sequences/:id/enroll", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid sequence ID" });
@@ -1363,8 +1423,8 @@ export async function registerRoutes(
         });
       }
 
-      // Verify sequence exists and is active
-      const sequence = await storage.getSequence(id);
+      // Verify sequence exists and belongs to user
+      const sequence = await storage.getSequence(userId, id);
       if (!sequence) {
         return res.status(404).json({ error: "Sequence not found" });
       }

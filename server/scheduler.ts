@@ -142,7 +142,7 @@ export async function scheduleInitialEmails(
   prospectId: number,
   sequenceId: number
 ): Promise<void> {
-  const sequence = await storage.getSequence(sequenceId);
+  const sequence = await storage.getSequenceById(sequenceId);
   
   if (!sequence || sequence.steps.length === 0) {
     console.log(`[Scheduler] No steps found for sequence ${sequenceId}`);
@@ -160,8 +160,8 @@ async function scheduleStepEmail(
   sequenceId: number,
   step: SequenceStepRecord
 ): Promise<void> {
-  // Get sequence for tone/length settings
-  const sequence = await storage.getSequence(sequenceId);
+  // Get sequence for tone/length settings (internal use - no userId check)
+  const sequence = await storage.getSequenceById(sequenceId);
   if (!sequence) return;
 
   // Get prospect for email generation
