@@ -14,7 +14,7 @@ import {
 const navItems = [
   {
     title: "Single Email",
-    url: "/",
+    url: "/dashboard",
     icon: Mail,
   },
   {
@@ -50,7 +50,7 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="px-4 py-5">
-        <Link href="/" className="flex items-center gap-2.5">
+        <Link href="/dashboard" className="flex items-center gap-2.5">
           <div className="flex items-center justify-center w-7 h-7 rounded bg-primary">
             <Zap className="w-4 h-4 text-primary-foreground" />
           </div>

@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { TopBar } from "@/components/TopBar";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import NotFound from "@/pages/not-found";
+import LandingPage from "@/pages/LandingPage";
 import SingleEmailPage from "@/pages/SingleEmailPage";
 import BulkCampaignsPage from "@/pages/BulkCampaignsPage";
 import SequencesPage from "@/pages/SequencesPage";
@@ -39,15 +40,17 @@ function Router({ requireAuth }: RouterProps) {
     );
   }
 
-  // With auth required, protect all routes except sign-in/sign-up
+  // With auth required, show landing page for unauthenticated users
+  // and protect all other routes
   return (
     <Switch>
       {/* Public routes - accessible without authentication */}
+      <Route path="/" component={LandingPage} />
       <Route path="/sign-in" component={SignInPage} />
       <Route path="/sign-up" component={SignUpPage} />
       
       {/* Protected routes - require authentication */}
-      <Route path="/">
+      <Route path="/dashboard">
         <ProtectedRoute>
           <SingleEmailPage />
         </ProtectedRoute>
@@ -105,10 +108,10 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
 function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const isAuthPage = location === "/sign-in" || location === "/sign-up";
+  const isPublicPage = location === "/" || location === "/sign-in" || location === "/sign-up";
 
-  // Don't show sidebar/layout for auth pages
-  if (isAuthPage) {
+  // Don't show sidebar/layout for public pages (landing, auth)
+  if (isPublicPage) {
     return <>{children}</>;
   }
 
@@ -137,7 +140,7 @@ function App() {
   }
 
   // With Clerk configured, routes are protected via ProtectedRoute component
-  // Unauthenticated users will be redirected to sign-in automatically
+  // Landing page shown at "/" for unauthenticated users
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
