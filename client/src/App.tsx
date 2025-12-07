@@ -17,7 +17,29 @@ import EmailHistoryPage from "@/pages/EmailHistoryPage";
 import SignInPage from "@/pages/SignInPage";
 import SignUpPage from "@/pages/SignUpPage";
 
-function Router() {
+interface RouterProps {
+  requireAuth: boolean;
+}
+
+function Router({ requireAuth }: RouterProps) {
+  // If auth is not required, render routes without protection
+  if (!requireAuth) {
+    return (
+      <Switch>
+        <Route path="/" component={SingleEmailPage} />
+        <Route path="/bulk" component={BulkCampaignsPage} />
+        <Route path="/history" component={EmailHistoryPage} />
+        <Route path="/sequences" component={SequencesPage} />
+        <Route path="/integrations" component={IntegrationsPage} />
+        <Route path="/settings" component={SettingsPage} />
+        <Route path="/sign-in" component={SignInPage} />
+        <Route path="/sign-up" component={SignUpPage} />
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
+
+  // With auth required, protect all routes except sign-in/sign-up
   return (
     <Switch>
       {/* Public routes - accessible without authentication */}
@@ -97,14 +119,16 @@ function ConditionalLayout({ children }: { children: React.ReactNode }) {
 function App() {
   // Check if Clerk is configured
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-  
+  const requireAuth = !!clerkKey;
+  console.log("clerkKey", clerkKey);
+  console.log("requireAuth", requireAuth);
   // If Clerk is not configured, show the app without auth
   if (!clerkKey) {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AppLayout>
-            <Router />
+            <Router requireAuth={false} />
           </AppLayout>
           <Toaster />
         </TooltipProvider>
@@ -118,7 +142,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <ConditionalLayout>
-          <Router />
+          <Router requireAuth={true} />
         </ConditionalLayout>
         <Toaster />
       </TooltipProvider>

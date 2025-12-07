@@ -7,6 +7,7 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { isLoaded, isSignedIn } = useAuth();
 
+  // Show loading state while Clerk is initializing
   if (!isLoaded) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -15,9 +16,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
+  // If not signed in, redirect to sign-in page
   if (!isSignedIn) {
     return <RedirectToSignIn redirectUrl={window.location.pathname} />;
   }
 
+  // User is signed in, render the protected content
   return <>{children}</>;
 }
