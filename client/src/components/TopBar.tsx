@@ -3,8 +3,40 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { UserButton, useUser } from "@clerk/clerk-react";
 
+// Separate component for Clerk user - only rendered when ClerkProvider is present
+// This ensures useUser() is only called inside ClerkProvider
+function ClerkUserSection() {
+  const { isSignedIn } = useUser();
+
+  if (isSignedIn) {
+    return (
+      <UserButton 
+        afterSignOutUrl="/"
+        appearance={{
+          elements: {
+            avatarBox: "w-7 h-7"
+          }
+        }}
+      />
+    );
+  }
+
+  // Not signed in - show default avatar
+  return <DefaultAvatar />;
+}
+
+// Default avatar when Clerk is not configured
+function DefaultAvatar() {
+  return (
+    <Avatar className="w-7 h-7" data-testid="avatar-user">
+      <AvatarFallback className="bg-secondary text-xs font-medium">
+        U
+      </AvatarFallback>
+    </Avatar>
+  );
+}
+
 export function TopBar() {
-  const { isSignedIn, user } = useUser();
   const clerkConfigured = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
   return (
@@ -15,22 +47,7 @@ export function TopBar() {
           Sandbox
         </Badge>
       </div>
-      {clerkConfigured && isSignedIn ? (
-        <UserButton 
-          afterSignOutUrl="/"
-          appearance={{
-            elements: {
-              avatarBox: "w-7 h-7"
-            }
-          }}
-        />
-      ) : (
-        <Avatar className="w-7 h-7" data-testid="avatar-user">
-          <AvatarFallback className="bg-secondary text-xs font-medium">
-            {user?.firstName?.[0] || "U"}
-          </AvatarFallback>
-        </Avatar>
-      )}
+      {clerkConfigured ? <ClerkUserSection /> : <DefaultAvatar />}
     </header>
   );
 }
