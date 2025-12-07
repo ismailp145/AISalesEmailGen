@@ -28,6 +28,7 @@ function Router({ requireAuth }: RouterProps) {
     return (
       <Switch>
         <Route path="/" component={SingleEmailPage} />
+        <Route path="/dashboard" component={SingleEmailPage} />
         <Route path="/bulk" component={BulkCampaignsPage} />
         <Route path="/history" component={EmailHistoryPage} />
         <Route path="/sequences" component={SequencesPage} />
