@@ -34,7 +34,7 @@ export const userProfiles = pgTable("user_profiles", {
 // Prospects table - stores prospect data (can be from CSV or CRM)
 export const prospects = pgTable("prospects", {
   id: serial("id").primaryKey(),
-  userId: text("user_id"), // Clerk user ID
+  userId: text("user_id").notNull(), // Clerk user ID
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   email: text("email").notNull(),
@@ -53,7 +53,7 @@ export const prospects = pgTable("prospects", {
 // Email activities table - tracks generated/sent emails
 export const emailActivities = pgTable("email_activities", {
   id: serial("id").primaryKey(),
-  userId: text("user_id"), // Clerk user ID
+  userId: text("user_id").notNull(), // Clerk user ID
   prospectId: integer("prospect_id").references(() => prospects.id), // Nullable - emails can exist without a prospect
   subject: text("subject").notNull(),
   body: text("body").notNull(),
@@ -70,7 +70,7 @@ export const emailActivities = pgTable("email_activities", {
 // CRM connections table - stores OAuth tokens and connection state
 export const crmConnections = pgTable("crm_connections", {
   id: serial("id").primaryKey(),
-  userId: text("user_id"), // Clerk user ID
+  userId: text("user_id").notNull(), // Clerk user ID
   provider: text("provider").notNull(), // 'hubspot', 'salesforce', 'pipedrive', 'gmail', 'outlook'
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
@@ -91,7 +91,7 @@ export const crmConnections = pgTable("crm_connections", {
 // Sequences table - the sequence template
 export const sequences = pgTable("sequences", {
   id: serial("id").primaryKey(),
-  userId: text("user_id"), // Clerk user ID
+  userId: text("user_id").notNull(), // Clerk user ID
   name: text("name").notNull(),
   description: text("description"),
   status: text("status").notNull().default("draft"), // 'draft', 'active', 'paused', 'archived'
