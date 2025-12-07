@@ -18,11 +18,14 @@ if (PUBLISHABLE_KEY) {
     </StrictMode>
   );
 } else {
-  // Render without Clerk if not configured (development/testing)
-  console.warn("Clerk: Missing VITE_CLERK_PUBLISHABLE_KEY - authentication disabled");
+  // Prevent app from loading if Clerk is not configured
+  console.error("Clerk: Missing VITE_CLERK_PUBLISHABLE_KEY - authentication is required but not configured.");
   root.render(
     <StrictMode>
-      <App />
+      <div className="text-red-500 text-center mt-8">
+        <h1>Authentication Error</h1>
+        <p>Clerk is not configured. Please set the <code>VITE_CLERK_PUBLISHABLE_KEY</code> environment variable.</p>
+      </div>
     </StrictMode>
   );
 }
