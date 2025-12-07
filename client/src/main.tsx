@@ -12,7 +12,7 @@ const root = createRoot(document.getElementById("root")!);
 if (PUBLISHABLE_KEY) {
   root.render(
     <StrictMode>
-      <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
+      <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/sign-in">
         <App />
       </ClerkProvider>
     </StrictMode>

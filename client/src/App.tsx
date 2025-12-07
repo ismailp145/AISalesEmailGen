@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { TopBar } from "@/components/TopBar";
-import { SignedIn, SignedOut, SignInButton, SignUpButton } from "@clerk/clerk-react";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import NotFound from "@/pages/not-found";
 import SingleEmailPage from "@/pages/SingleEmailPage";
 import BulkCampaignsPage from "@/pages/BulkCampaignsPage";
@@ -20,14 +20,41 @@ import SignUpPage from "@/pages/SignUpPage";
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={SingleEmailPage} />
-      <Route path="/bulk" component={BulkCampaignsPage} />
-      <Route path="/history" component={EmailHistoryPage} />
-      <Route path="/sequences" component={SequencesPage} />
-      <Route path="/integrations" component={IntegrationsPage} />
-      <Route path="/settings" component={SettingsPage} />
+      {/* Public routes - accessible without authentication */}
       <Route path="/sign-in" component={SignInPage} />
       <Route path="/sign-up" component={SignUpPage} />
+      
+      {/* Protected routes - require authentication */}
+      <Route path="/">
+        <ProtectedRoute>
+          <SingleEmailPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/bulk">
+        <ProtectedRoute>
+          <BulkCampaignsPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/history">
+        <ProtectedRoute>
+          <EmailHistoryPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/sequences">
+        <ProtectedRoute>
+          <SequencesPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/integrations">
+        <ProtectedRoute>
+          <IntegrationsPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/settings">
+        <ProtectedRoute>
+          <SettingsPage />
+        </ProtectedRoute>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -54,48 +81,17 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AuthenticatedApp() {
-  return (
-    <AppLayout>
-      <Router />
-    </AppLayout>
-  );
-}
+function ConditionalLayout({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  const isAuthPage = location === "/sign-in" || location === "/sign-up";
 
-function UnauthenticatedApp() {
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background">
-      <div className="text-center space-y-6 p-8">
-        <div className="flex items-center justify-center gap-2.5 mb-8">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary">
-            <span className="text-xl text-primary-foreground">⚡</span>
-          </div>
-          <span className="text-2xl font-semibold tracking-tight">
-            Basho Studio
-          </span>
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          AI-Powered Sales Emails
-        </h1>
-        <p className="text-muted-foreground max-w-md mx-auto">
-          Generate highly personalized cold outreach emails that get responses. 
-          Basho-style emails with deep personalization.
-        </p>
-        <div className="flex items-center justify-center gap-4 pt-4">
-          <SignInButton mode="modal">
-            <button className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6">
-              Sign In
-            </button>
-          </SignInButton>
-          <SignUpButton mode="modal">
-            <button className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-6">
-              Sign Up
-            </button>
-          </SignUpButton>
-        </div>
-      </div>
-    </div>
-  );
+  // Don't show sidebar/layout for auth pages
+  if (isAuthPage) {
+    return <>{children}</>;
+  }
+
+  // Show full layout for protected pages
+  return <AppLayout>{children}</AppLayout>;
 }
 
 function App() {
@@ -116,16 +112,14 @@ function App() {
     );
   }
 
-  // With Clerk configured, use SignedIn/SignedOut
+  // With Clerk configured, routes are protected via ProtectedRoute component
+  // Unauthenticated users will be redirected to sign-in automatically
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <SignedOut>
-          <UnauthenticatedApp />
-        </SignedOut>
-        <SignedIn>
-          <AuthenticatedApp />
-        </SignedIn>
+        <ConditionalLayout>
+          <Router />
+        </ConditionalLayout>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

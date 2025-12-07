@@ -16,7 +16,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!isSignedIn) {
-    return <RedirectToSignIn />;
+    return <RedirectToSignIn redirectUrl={window.location.pathname} />;
   }
 
   return <>{children}</>;
