@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation } from "wouter";
 import { Loader2, Link2, Unlink, RefreshCw, Check, AlertCircle, ExternalLink, RotateCcw, Mail } from "lucide-react";
 import { SiHubspot, SiSalesforce, SiGmail } from "react-icons/si";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -30,9 +29,9 @@ interface CrmConnectionsResponse {
 
 export default function IntegrationsPage() {
   const { toast } = useToast();
-  const [location] = useLocation();
 
-  // Handle OAuth success/error from URL params
+  // Handle OAuth success/error from URL params on mount
+  // OAuth callbacks redirect from external providers, so this runs when the page loads
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const success = params.get("success");
@@ -56,7 +55,8 @@ export default function IntegrationsPage() {
       });
       window.history.replaceState({}, "", "/integrations");
     }
-  }, [location]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data, isLoading, refetch } = useQuery<CrmConnectionsResponse>({
     queryKey: ["/api/crm/connections"],

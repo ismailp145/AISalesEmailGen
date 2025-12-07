@@ -54,7 +54,7 @@ export const prospects = pgTable("prospects", {
 export const emailActivities = pgTable("email_activities", {
   id: serial("id").primaryKey(),
   userId: text("user_id"), // Clerk user ID
-  prospectId: serial("prospect_id").references(() => prospects.id),
+  prospectId: integer("prospect_id").references(() => prospects.id), // Nullable - emails can exist without a prospect
   subject: text("subject").notNull(),
   body: text("body").notNull(),
   tone: text("tone").notNull(),

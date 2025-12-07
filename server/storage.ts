@@ -366,7 +366,7 @@ export class DatabaseStorage implements IStorage {
   // ============================================
 
   async saveEmailActivity(data: SaveEmailActivityInput): Promise<EmailActivityRecord> {
-    // First, try to find a matching prospect
+    // First, try to find a matching prospect by email
     const [prospect] = await db.select()
       .from(prospects)
       .where(eq(prospects.email, data.prospectEmail))
@@ -374,7 +374,7 @@ export class DatabaseStorage implements IStorage {
     
     const [activity] = await db.insert(emailActivities)
       .values({
-        prospectId: prospect?.id || 1, // Use prospect ID or default
+        prospectId: prospect?.id ?? null, // Null if no matching prospect found
         subject: data.subject,
         body: data.body,
         tone: data.tone,

@@ -708,12 +708,12 @@ export async function registerRoutes(
         return res.redirect(`/integrations?error=${encodeURIComponent(testResult.error || "Connection test failed")}`);
       }
 
-      // Save connection
+      // Save connection - instanceUrl is required for Salesforce API calls
       await storage.saveCrmConnection("salesforce", {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         accountName: testResult.accountName,
-        accountId: testResult.userId,
+        instanceUrl: tokens.instance_url, // Store instance URL (not userId) - required for API calls
       });
 
       return res.redirect("/integrations?success=salesforce");
