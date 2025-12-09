@@ -287,7 +287,18 @@ export async function registerRoutes(
           });
         }
         
-        const gmail = createGmailService(connection.accessToken, connection.refreshToken || undefined);
+        const gmail = createGmailService(
+          connection.accessToken,
+          connection.refreshToken || undefined,
+          // Persist refreshed tokens to database
+          async (newAccessToken) => {
+            await storage.saveCrmConnection(userId, "gmail" as CrmProvider, {
+              accessToken: newAccessToken,
+              refreshToken: connection.refreshToken || undefined,
+              accountName: connection.accountName || undefined,
+            });
+          }
+        );
         result = await gmail.sendEmail({ to, from, subject, body });
       } else if (provider === "outlook") {
         // Get Outlook connection
@@ -299,7 +310,18 @@ export async function registerRoutes(
           });
         }
         
-        const outlook = createOutlookService(connection.accessToken, connection.refreshToken || undefined);
+        const outlook = createOutlookService(
+          connection.accessToken,
+          connection.refreshToken || undefined,
+          // Persist refreshed tokens to database
+          async (newAccessToken) => {
+            await storage.saveCrmConnection(userId, "outlook" as CrmProvider, {
+              accessToken: newAccessToken,
+              refreshToken: connection.refreshToken || undefined,
+              accountName: connection.accountName || undefined,
+            });
+          }
+        );
         result = await outlook.sendEmail({ to, subject, body });
       } else {
         // Default to SendGrid
@@ -787,7 +809,16 @@ export async function registerRoutes(
       const salesforce = createSalesforceService(
         connection.accessToken,
         connection.instanceUrl || "",
-        connection.refreshToken || undefined
+        connection.refreshToken || undefined,
+        // Persist refreshed tokens to database
+        async (newAccessToken) => {
+          await storage.saveCrmConnection(userId, "salesforce", {
+            accessToken: newAccessToken,
+            refreshToken: connection.refreshToken || undefined,
+            accountName: connection.accountName || undefined,
+            instanceUrl: connection.instanceUrl || undefined,
+          });
+        }
       );
 
       const limit = parseInt(req.query.limit as string) || 100;
@@ -852,7 +883,16 @@ export async function registerRoutes(
       const salesforce = createSalesforceService(
         connection.accessToken,
         connection.instanceUrl || "",
-        connection.refreshToken || undefined
+        connection.refreshToken || undefined,
+        // Persist refreshed tokens to database
+        async (newAccessToken) => {
+          await storage.saveCrmConnection(userId, "salesforce", {
+            accessToken: newAccessToken,
+            refreshToken: connection.refreshToken || undefined,
+            accountName: connection.accountName || undefined,
+            instanceUrl: connection.instanceUrl || undefined,
+          });
+        }
       );
 
       const result = await salesforce.logEmailActivity(parsed.data.contactId, {
@@ -1003,7 +1043,15 @@ export async function registerRoutes(
 
       const gmail = createGmailService(
         connection.accessToken,
-        connection.refreshToken || undefined
+        connection.refreshToken || undefined,
+        // Persist refreshed tokens to database
+        async (newAccessToken) => {
+          await storage.saveCrmConnection(userId, "gmail" as CrmProvider, {
+            accessToken: newAccessToken,
+            refreshToken: connection.refreshToken || undefined,
+            accountName: connection.accountName || undefined,
+          });
+        }
       );
 
       const result = await gmail.sendEmail({
@@ -1155,7 +1203,15 @@ export async function registerRoutes(
 
       const outlook = createOutlookService(
         connection.accessToken,
-        connection.refreshToken || undefined
+        connection.refreshToken || undefined,
+        // Persist refreshed tokens to database
+        async (newAccessToken) => {
+          await storage.saveCrmConnection(userId, "outlook" as CrmProvider, {
+            accessToken: newAccessToken,
+            refreshToken: connection.refreshToken || undefined,
+            accountName: connection.accountName || undefined,
+          });
+        }
       );
 
       const result = await outlook.sendEmail({

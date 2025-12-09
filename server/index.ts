@@ -3,7 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { clerkAuthMiddleware } from "./middleware/clerk";
+import { clerkAuthMiddleware, requireAuthentication } from "./middleware/clerk";
 
 const app = express();
 const httpServer = createServer(app);
@@ -24,10 +24,31 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// Routes that should be publicly accessible (no auth required)
+const PUBLIC_ROUTES = [
+  "/api/health",
+  "/api/crm/salesforce/callback",
+  "/api/email/gmail/callback",
+  "/api/email/outlook/callback",
+];
+
 // Apply Clerk auth middleware globally (if configured)
 if (process.env.CLERK_SECRET_KEY) {
+  // First, add auth context to all requests
   app.use(clerkAuthMiddleware);
-  console.log("[Auth] Clerk authentication enabled");
+  
+  // Then, enforce authentication on protected API routes
+  app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+    // Skip auth enforcement for public routes
+    const fullPath = req.baseUrl + req.path;
+    if (PUBLIC_ROUTES.some(route => fullPath.startsWith(route))) {
+      return next();
+    }
+    // Require authentication for all other API routes
+    return requireAuthentication(req, res, next);
+  });
+  
+  console.log("[Auth] Clerk authentication enabled and enforced on API routes");
 } else {
   console.log("[Auth] Clerk not configured - running without authentication");
 }
@@ -99,7 +120,7 @@ app.use((req, res, next) => {
     {
       port,
       host: "0.0.0.0",
-      // reusePort: true,
+      // reusePort: true, // uncomment this to enable port reuse 
     },
     () => {
       log(`serving on port ${port}`);

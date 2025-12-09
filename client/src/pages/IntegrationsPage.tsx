@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Loader2, Link2, Unlink, RefreshCw, Check, AlertCircle, ExternalLink, RotateCcw, Mail } from "lucide-react";
+import { Loader2, Link2, Unlink, RefreshCw, Check, AlertCircle, RotateCcw, Mail } from "lucide-react";
 import { SiHubspot, SiSalesforce, SiGmail } from "react-icons/si";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,8 +55,7 @@ export default function IntegrationsPage() {
       });
       window.history.replaceState({}, "", "/integrations");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [toast, queryClient]);
 
   const { data, isLoading, refetch } = useQuery<CrmConnectionsResponse>({
     queryKey: ["/api/crm/connections"],

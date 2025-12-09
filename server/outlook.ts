@@ -24,10 +24,16 @@ interface GraphMailMessage {
 export class OutlookService {
   private accessToken: string;
   private refreshToken?: string;
+  private onTokenRefresh?: (newAccessToken: string) => Promise<void>;
 
-  constructor(accessToken: string, refreshToken?: string) {
+  constructor(
+    accessToken: string,
+    refreshToken?: string,
+    onTokenRefresh?: (newAccessToken: string) => Promise<void>
+  ) {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
+    this.onTokenRefresh = onTokenRefresh;
   }
 
   // Get OAuth authorization URL
@@ -131,6 +137,18 @@ export class OutlookService {
 
     const data = await response.json();
     this.accessToken = data.access_token;
+
+    // Persist the new access token to the database via callback
+    if (this.onTokenRefresh) {
+      try {
+        await this.onTokenRefresh(data.access_token);
+        console.log("[Outlook] Access token persisted to database");
+      } catch (err) {
+        console.error("[Outlook] Failed to persist refreshed token:", err);
+        // Don't throw - the token refresh itself succeeded
+      }
+    }
+
     return data.access_token;
   }
 
@@ -272,9 +290,10 @@ export class OutlookService {
 // Factory function to create Outlook service from stored tokens
 export function createOutlookService(
   accessToken: string,
-  refreshToken?: string
+  refreshToken?: string,
+  onTokenRefresh?: (newAccessToken: string) => Promise<void>
 ): OutlookService {
-  return new OutlookService(accessToken, refreshToken);
+  return new OutlookService(accessToken, refreshToken, onTokenRefresh);
 }
 
 // Check if Outlook is configured

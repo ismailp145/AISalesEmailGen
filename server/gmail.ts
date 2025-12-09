@@ -26,10 +26,16 @@ interface GmailMessage {
 export class GmailService {
   private accessToken: string;
   private refreshToken?: string;
+  private onTokenRefresh?: (newAccessToken: string) => Promise<void>;
 
-  constructor(accessToken: string, refreshToken?: string) {
+  constructor(
+    accessToken: string,
+    refreshToken?: string,
+    onTokenRefresh?: (newAccessToken: string) => Promise<void>
+  ) {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
+    this.onTokenRefresh = onTokenRefresh;
   }
 
   // Get OAuth authorization URL
@@ -128,6 +134,18 @@ export class GmailService {
 
     const data = await response.json();
     this.accessToken = data.access_token;
+
+    // Persist the new access token to the database via callback
+    if (this.onTokenRefresh) {
+      try {
+        await this.onTokenRefresh(data.access_token);
+        console.log("[Gmail] Access token persisted to database");
+      } catch (err) {
+        console.error("[Gmail] Failed to persist refreshed token:", err);
+        // Don't throw - the token refresh itself succeeded
+      }
+    }
+
     return data.access_token;
   }
 
@@ -279,9 +297,10 @@ export class GmailService {
 // Factory function to create Gmail service from stored tokens
 export function createGmailService(
   accessToken: string,
-  refreshToken?: string
+  refreshToken?: string,
+  onTokenRefresh?: (newAccessToken: string) => Promise<void>
 ): GmailService {
-  return new GmailService(accessToken, refreshToken);
+  return new GmailService(accessToken, refreshToken, onTokenRefresh);
 }
 
 // Check if Gmail is configured

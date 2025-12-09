@@ -48,11 +48,18 @@ export class SalesforceService {
   private accessToken: string;
   private instanceUrl: string;
   private refreshToken?: string;
+  private onTokenRefresh?: (newAccessToken: string) => Promise<void>;
 
-  constructor(accessToken: string, instanceUrl: string, refreshToken?: string) {
+  constructor(
+    accessToken: string,
+    instanceUrl: string,
+    refreshToken?: string,
+    onTokenRefresh?: (newAccessToken: string) => Promise<void>
+  ) {
     this.accessToken = accessToken;
     this.instanceUrl = instanceUrl;
     this.refreshToken = refreshToken;
+    this.onTokenRefresh = onTokenRefresh;
   }
 
   // Get OAuth authorization URL
@@ -145,6 +152,18 @@ export class SalesforceService {
 
     const data = await response.json();
     this.accessToken = data.access_token;
+
+    // Persist the new access token to the database via callback
+    if (this.onTokenRefresh) {
+      try {
+        await this.onTokenRefresh(data.access_token);
+        console.log("[Salesforce] Access token persisted to database");
+      } catch (err) {
+        console.error("[Salesforce] Failed to persist refreshed token:", err);
+        // Don't throw - the token refresh itself succeeded
+      }
+    }
+
     return data.access_token;
   }
 
@@ -314,9 +333,10 @@ export class SalesforceService {
 export function createSalesforceService(
   accessToken: string,
   instanceUrl: string,
-  refreshToken?: string
+  refreshToken?: string,
+  onTokenRefresh?: (newAccessToken: string) => Promise<void>
 ): SalesforceService {
-  return new SalesforceService(accessToken, instanceUrl, refreshToken);
+  return new SalesforceService(accessToken, instanceUrl, refreshToken, onTokenRefresh);
 }
 
 // Check if Salesforce is configured

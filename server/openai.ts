@@ -23,6 +23,18 @@ const provider = useOpenRouter ? openrouter : createOpenAI({
 
 console.log(`[AI] Using ${useOpenRouter ? "OpenRouter" : "OpenAI"} provider`);
 
+/**
+ * Extracts JSON content from AI response text, handling potential markdown code blocks.
+ */
+function extractJsonFromResponse(text: string): string {
+  if (text.includes("```json")) {
+    return text.replace(/```json\n?/g, "").replace(/```\n?/g, "");
+  } else if (text.includes("```")) {
+    return text.replace(/```\n?/g, "");
+  }
+  return text;
+}
+
 interface EmailGenerationOptions {
   prospect: Prospect;
   tone: "casual" | "professional" | "hyper-personal";
@@ -165,14 +177,7 @@ export async function generateEmail(options: Omit<EmailGenerationOptions, 'profi
       throw new Error("No response from AI");
     }
 
-    // Parse JSON from response - handle potential markdown code blocks
-    let jsonContent = text;
-    if (text.includes("```json")) {
-      jsonContent = text.replace(/```json\n?/g, "").replace(/```\n?/g, "");
-    } else if (text.includes("```")) {
-      jsonContent = text.replace(/```\n?/g, "");
-    }
-
+    const jsonContent = extractJsonFromResponse(text);
     const parsed = JSON.parse(jsonContent.trim());
     console.log("[AI] Successfully parsed email for:", options.prospect.firstName);
     
@@ -316,14 +321,7 @@ export async function detectTriggers(prospect: Prospect): Promise<DetectTriggers
       throw new Error("No response from AI");
     }
 
-    // Parse JSON from response - handle potential markdown code blocks
-    let jsonContent = text;
-    if (text.includes("```json")) {
-      jsonContent = text.replace(/```json\n?/g, "").replace(/```\n?/g, "");
-    } else if (text.includes("```")) {
-      jsonContent = text.replace(/```\n?/g, "");
-    }
-
+    const jsonContent = extractJsonFromResponse(text);
     const parsed = JSON.parse(jsonContent.trim());
     
     // Valid trigger types that match our schema
