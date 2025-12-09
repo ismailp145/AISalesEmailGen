@@ -3,6 +3,7 @@ import { generateText } from "ai";
 import type { Prospect, GeneratedEmail, UserProfile, DetectedTrigger, DetectTriggersResponse } from "@shared/schema";
 import { storage } from "./storage";
 import { nanoid } from "nanoid";
+import { DEFAULT_USER_ID } from "./constants";
 
 // Configure OpenRouter as the provider using Vercel AI SDK
 const openrouter = createOpenAI({
@@ -136,9 +137,10 @@ Return your response as a JSON object with two fields:
 The email should be signed with just "Best," followed by "${signatureName}" (no full name or title).`;
 }
 
-export async function generateEmail(options: Omit<EmailGenerationOptions, 'profile'> & { triggers?: DetectedTrigger[]; linkedinContent?: string }): Promise<GeneratedEmail> {
-  // Fetch user profile to include in the prompt
-  const profile = await storage.getUserProfile();
+export async function generateEmail(options: Omit<EmailGenerationOptions, 'profile'> & { triggers?: DetectedTrigger[]; linkedinContent?: string; userId?: string }): Promise<GeneratedEmail> {
+  // Fetch user profile to include in the prompt (use provided userId or default)
+  const userId = options.userId || DEFAULT_USER_ID;
+  const profile = await storage.getUserProfile(userId);
   const optionsWithProfile: EmailGenerationOptions = { ...options, profile, triggers: options.triggers, linkedinContent: options.linkedinContent };
   
   const prompt = buildPrompt(optionsWithProfile);
@@ -204,6 +206,7 @@ export async function generateEmailsBatch(
     tone: "casual" | "professional" | "hyper-personal";
     length: "short" | "medium";
     linkedinContent?: string;
+    userId?: string;
   }>,
   onProgress?: (index: number, result: GeneratedEmail | Error) => void
 ): Promise<Array<{ email?: GeneratedEmail; error?: string }>> {

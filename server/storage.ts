@@ -58,8 +58,8 @@ export interface SaveEmailActivityInput {
 
 export interface IStorage {
   // User profile operations
-  getUserProfile(): Promise<UserProfile>;
-  saveUserProfile(profile: UserProfile): Promise<UserProfile>;
+  getUserProfile(userId: string): Promise<UserProfile>;
+  saveUserProfile(userId: string, profile: UserProfile): Promise<UserProfile>;
   
   // Campaign/Prospect operations (in-memory for bulk campaigns)
   createCampaign(prospects: Prospect[]): Promise<ProspectWithStatus[]>;
@@ -136,8 +136,11 @@ export class DatabaseStorage implements IStorage {
   // User Profile Operations
   // ============================================
   
-  async getUserProfile(): Promise<UserProfile> {
-    const [profile] = await db.select().from(userProfiles).limit(1);
+  async getUserProfile(userId: string): Promise<UserProfile> {
+    const [profile] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
     
     if (!profile) {
       return defaultUserProfile;
@@ -163,10 +166,14 @@ export class DatabaseStorage implements IStorage {
     };
   }
   
-  async saveUserProfile(profile: UserProfile): Promise<UserProfile> {
-    const [existing] = await db.select().from(userProfiles).limit(1);
+  async saveUserProfile(userId: string, profile: UserProfile): Promise<UserProfile> {
+    const [existing] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
     
     const data = {
+      userId,
       senderName: profile.senderName,
       senderTitle: profile.senderTitle || null,
       senderEmail: profile.senderEmail || null,
@@ -187,7 +194,9 @@ export class DatabaseStorage implements IStorage {
     };
     
     if (existing) {
-      await db.update(userProfiles).set(data).where(eq(userProfiles.id, existing.id));
+      await db.update(userProfiles)
+        .set(data)
+        .where(eq(userProfiles.id, existing.id));
     } else {
       await db.insert(userProfiles).values(data);
     }
