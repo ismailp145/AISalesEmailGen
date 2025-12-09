@@ -10,7 +10,7 @@ import { relations } from "drizzle-orm";
 // User profiles table - stores sender/company info
 export const userProfiles = pgTable("user_profiles", {
   id: serial("id").primaryKey(),
-  userId: text("user_id").unique(), // Clerk user ID - unique to ensure one profile per user
+  userId: text("user_id").notNull().unique(), // Clerk user ID - unique to ensure one profile per user
   senderName: text("sender_name").notNull(),
   senderTitle: text("sender_title"),
   senderEmail: text("sender_email"),

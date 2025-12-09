@@ -21,12 +21,39 @@ import {
   type EnrollmentStatus,
 } from "@shared/schema";
 import { z } from "zod";
-import { DEFAULT_USER_ID } from "./constants";
+import { DEV_USER_HEADER } from "./constants";
+import { nanoid } from "nanoid";
 
-// Helper to get user ID with fallback for unauthenticated scenarios
+// Helper to get user ID with per-session dev fallback when Clerk is not configured.
+// This avoids sharing data across unauthenticated users by issuing a unique
+// session-scoped identifier instead of a global "anonymous" value.
 function getUserIdOrDefault(req: Request): string {
   const userId = getCurrentUserId(req);
-  return userId || DEFAULT_USER_ID;
+  if (userId) return userId;
+
+  // In development (no Clerk configured), allow a dev ID via header or session.
+  if (!process.env.CLERK_SECRET_KEY) {
+    const headerUserId = req.header(DEV_USER_HEADER) || req.header("x-user-id");
+    const session = (req as any).session as { devUserId?: string } | undefined;
+
+    if (headerUserId) {
+      const devId = `dev:${headerUserId}`;
+      if (session) session.devUserId = devId;
+      return devId;
+    }
+
+    if (session?.devUserId) {
+      return session.devUserId;
+    }
+
+    const generated = `dev:${nanoid(10)}`;
+    if (session) {
+      session.devUserId = generated;
+    }
+    return generated;
+  }
+
+  throw new Error("User ID is required but was not found in the request.");
 }
 
 // Initialize SendGrid on module load
@@ -768,7 +795,7 @@ export async function registerRoutes(
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         accountName: testResult.accountName,
-        instanceUrl: tokens.instance_url, // Store instance URL (not userId) - required for API calls
+        accountId: tokens.instance_url, // Store instance URL (not userId); this will be saved as 'accountId' in the database (see storage.ts line 279)  
       });
 
       return res.redirect("/integrations?success=salesforce");

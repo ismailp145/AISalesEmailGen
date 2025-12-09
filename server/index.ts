@@ -1,12 +1,16 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import createMemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { clerkAuthMiddleware, requireAuthentication } from "./middleware/clerk";
+import { DEV_SESSION_SECRET } from "./constants";
 
 const app = express();
 const httpServer = createServer(app);
+const MemoryStore = createMemoryStore(session);
 
 declare module "http" {
   interface IncomingMessage {
@@ -50,7 +54,21 @@ if (process.env.CLERK_SECRET_KEY) {
   
   console.log("[Auth] Clerk authentication enabled and enforced on API routes");
 } else {
-  console.log("[Auth] Clerk not configured - running without authentication");
+  // Enable lightweight session support in development to keep per-session context
+  app.use(
+    session({
+      secret: DEV_SESSION_SECRET,
+      resave: false,
+      saveUninitialized: false,
+      store: new MemoryStore({ checkPeriod: 86400000 }),
+      cookie: {
+        secure: false,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      },
+    }),
+  );
+
+  console.log("[Auth] Clerk not configured - running without authentication (dev sessions enabled)");
 }
 
 export function log(message: string, source = "express") {
@@ -120,7 +138,6 @@ app.use((req, res, next) => {
     {
       port,
       host: "0.0.0.0",
-      // reusePort: true, // uncomment this to enable port reuse 
     },
     () => {
       log(`serving on port ${port}`);

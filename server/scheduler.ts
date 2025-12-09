@@ -209,6 +209,7 @@ async function scheduleStepEmail(
         prospect,
         tone: sequence.tone as "casual" | "professional" | "hyper-personal",
         length: sequence.length as "short" | "medium",
+        userId: prospectRecord.userId,
       });
 
       if (!subject) subject = generatedEmail.subject;

@@ -124,8 +124,6 @@ function App() {
   // Check if Clerk is configured
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
   const requireAuth = !!clerkKey;
-  console.log("clerkKey", clerkKey);
-  console.log("requireAuth", requireAuth);
   // If Clerk is not configured, show the app without auth
   if (!clerkKey) {
     return (
