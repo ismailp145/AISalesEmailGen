@@ -73,20 +73,20 @@ async function processEmail(scheduledEmail: ScheduledEmailRecord): Promise<void>
     return;
   }
 
-  // Get user profile for sender info
-  const profile = await storage.getUserProfile();
-  
-  if (!profile.senderEmail) {
-    await storage.updateScheduledEmailStatus(scheduledEmail.id, "failed", "No sender email configured in profile");
-    return;
-  }
-
   // Get prospect for recipient email
   const prospects = await storage.getAllProspects();
   const prospect = prospects.find(p => p.id === scheduledEmail.prospectId);
   
   if (!prospect) {
     await storage.updateScheduledEmailStatus(scheduledEmail.id, "failed", "Prospect not found");
+    return;
+  }
+
+  // Get user profile for sender info (using userId from prospect)
+  const profile = await storage.getUserProfile(prospect.userId);
+  
+  if (!profile.senderEmail) {
+    await storage.updateScheduledEmailStatus(scheduledEmail.id, "failed", "No sender email configured in profile");
     return;
   }
 

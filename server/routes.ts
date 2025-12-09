@@ -109,8 +109,9 @@ export async function registerRoutes(
 
       const { prospect, tone, length, triggers } = parsed.data;
       const linkedinContent = (req.body as any).linkedinContent;
+      const userId = getUserIdOrDefault(req);
       
-      const email = await generateEmail({ prospect, tone, length, triggers, linkedinContent });
+      const email = await generateEmail({ prospect, tone, length, triggers, linkedinContent, userId });
       
       // Save to email activities table
       try {
@@ -207,11 +208,13 @@ export async function registerRoutes(
       }
 
       const { prospects, tone, length } = parsed.data;
+      const userId = getUserIdOrDefault(req);
       
       const batchInput = prospects.map((prospect) => ({
         prospect,
         tone,
         length,
+        userId,
       }));
 
       const results = await generateEmailsBatch(batchInput);
@@ -224,7 +227,6 @@ export async function registerRoutes(
       }));
 
       // Save all generated emails
-      const userId = getUserIdOrDefault(req);
       for (let i = 0; i < response.length; i++) {
         const item = response[i];
         if (item.email) {
@@ -422,7 +424,8 @@ export async function registerRoutes(
   // Get user profile
   app.get("/api/profile", async (req, res) => {
     try {
-      const profile = await storage.getUserProfile();
+      const userId = getUserIdOrDefault(req);
+      const profile = await storage.getUserProfile(userId);
       return res.json(profile);
     } catch (error: any) {
       console.error("Get profile error:", error);
@@ -436,6 +439,7 @@ export async function registerRoutes(
   // Save user profile
   app.post("/api/profile", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const parsed = userProfileSchema.safeParse(req.body);
       
       if (!parsed.success) {
@@ -445,7 +449,7 @@ export async function registerRoutes(
         });
       }
 
-      const profile = await storage.saveUserProfile(parsed.data);
+      const profile = await storage.saveUserProfile(userId, parsed.data);
       return res.json(profile);
     } catch (error: any) {
       console.error("Save profile error:", error);
