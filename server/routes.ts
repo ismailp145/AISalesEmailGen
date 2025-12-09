@@ -21,9 +21,7 @@ import {
   type EnrollmentStatus,
 } from "@shared/schema";
 import { z } from "zod";
-
-// Default user ID when authentication is not configured
-const DEFAULT_USER_ID = "anonymous";
+import { DEFAULT_USER_ID } from "./constants";
 
 // Helper to get user ID with fallback for unauthenticated scenarios
 function getUserIdOrDefault(req: Request): string {

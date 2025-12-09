@@ -3,6 +3,7 @@ import { generateText } from "ai";
 import type { Prospect, GeneratedEmail, UserProfile, DetectedTrigger, DetectTriggersResponse } from "@shared/schema";
 import { storage } from "./storage";
 import { nanoid } from "nanoid";
+import { DEFAULT_USER_ID } from "./constants";
 
 // Configure OpenRouter as the provider using Vercel AI SDK
 const openrouter = createOpenAI({
@@ -137,8 +138,8 @@ The email should be signed with just "Best," followed by "${signatureName}" (no 
 }
 
 export async function generateEmail(options: Omit<EmailGenerationOptions, 'profile'> & { triggers?: DetectedTrigger[]; linkedinContent?: string; userId?: string }): Promise<GeneratedEmail> {
-  // Fetch user profile to include in the prompt (use provided userId or default to 'anonymous')
-  const userId = options.userId || 'anonymous';
+  // Fetch user profile to include in the prompt (use provided userId or default)
+  const userId = options.userId || DEFAULT_USER_ID;
   const profile = await storage.getUserProfile(userId);
   const optionsWithProfile: EmailGenerationOptions = { ...options, profile, triggers: options.triggers, linkedinContent: options.linkedinContent };
   
