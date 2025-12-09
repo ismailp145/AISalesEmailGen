@@ -148,7 +148,7 @@ export async function generateEmail(options: Omit<EmailGenerationOptions, 'profi
   console.log("[AI] Using:", useOpenRouter ? "OpenRouter" : "OpenAI");
 
   try {
-    const model = useOpenRouter ? "openai/gpt-4o" : "gpt-4o";
+    const model = useOpenRouter ? "anthropic/claude-sonnet-4.5" : "anthropic/claude-3.7-sonnet";
     
     const { text } = await generateText({
       model: provider(model),
