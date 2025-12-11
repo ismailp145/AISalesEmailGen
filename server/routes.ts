@@ -1,13 +1,13 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
-import { generateEmail, generateEmailsBatch, detectTriggers } from "./openai";
+import { generateEmail, generateEmailsBatch, detectTriggers, extractProfileFromWebsite } from "./openai";
 import { sendEmail, isSendGridConfigured, initSendGrid } from "./sendgrid";
 import { createHubSpotService } from "./hubspot";
 import { SalesforceService, createSalesforceService, isSalesforceConfigured } from "./salesforce";
 import { GmailService, createGmailService, isGmailConfigured } from "./gmail";
 import { OutlookService, createOutlookService, isOutlookConfigured } from "./outlook";
 import { storage } from "./storage";
-import { isFirecrawlConfigured, researchCompany } from "./firecrawl";
+import { isFirecrawlConfigured, researchCompany, crawlCompanyWebsite } from "./firecrawl";
 import { getCurrentUserId } from "./middleware/clerk";
 import { 
   generateEmailRequestSchema, 
@@ -542,6 +542,79 @@ export async function registerRoutes(
       return res.status(500).json({
         error: "Failed to save profile",
         message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Auto-fill profile from company website
+  app.post("/api/profile/auto-fill", async (req, res) => {
+    try {
+      const aiStatus = checkAIIntegration();
+      if (!aiStatus.configured) {
+        return res.status(503).json({
+          error: "Service unavailable",
+          message: aiStatus.message,
+        });
+      }
+
+      if (!isFirecrawlConfigured()) {
+        return res.status(503).json({
+          error: "Firecrawl not configured",
+          message: "Firecrawl is required for auto-fill. Please set FIRECRAWL_API_KEY.",
+        });
+      }
+
+      const schema = z.object({
+        companyWebsite: z.string().url("Invalid URL"),
+        companyName: z.string().min(1, "Company name is required"),
+      });
+
+      const parsed = schema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const { companyWebsite, companyName } = parsed.data;
+
+      console.log("[API] Auto-filling profile from website:", companyWebsite);
+
+      // Crawl the company website
+      const websiteContent = await crawlCompanyWebsite(companyWebsite);
+
+      if (!websiteContent || websiteContent.length < 100) {
+        return res.status(400).json({
+          error: "Insufficient content",
+          message: "Could not extract enough content from the website. Please try a different URL or fill in manually.",
+        });
+      }
+
+      // Extract profile information using AI
+      const extractedProfile = await extractProfileFromWebsite(websiteContent, companyName);
+
+      if (Object.keys(extractedProfile).length === 0) {
+        return res.status(400).json({
+          error: "No data extracted",
+          message: "Could not extract profile information from the website. Please fill in manually.",
+        });
+      }
+
+      console.log("[API] Successfully extracted", Object.keys(extractedProfile).length, "profile fields");
+
+      return res.json({
+        success: true,
+        extractedFields: extractedProfile,
+        fieldsCount: Object.keys(extractedProfile).length,
+      });
+    } catch (error: any) {
+      console.error("Auto-fill profile error:", error);
+      
+      return res.status(500).json({
+        error: "Failed to auto-fill profile",
+        message: error?.message || "An unexpected error occurred. Please try again or fill in manually.",
       });
     }
   });

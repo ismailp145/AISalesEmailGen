@@ -405,3 +405,111 @@ export async function detectTriggers(
     throw error;
   }
 }
+
+// ============================================
+// Profile Extraction from Website
+// ============================================
+
+/**
+ * Extract user profile information from website content using AI
+ */
+export async function extractProfileFromWebsite(
+  websiteContent: string,
+  companyName: string
+): Promise<Partial<UserProfile>> {
+  console.log("[AI] Extracting profile from website content for:", companyName);
+
+  const prompt = `You are an expert at analyzing company websites and extracting key information for sales profiles.
+
+Analyze the following website content from ${companyName} and extract relevant information to fill out a sales profile.
+
+WEBSITE CONTENT:
+${websiteContent.substring(0, 8000)}
+
+Extract and structure the following information from the website content:
+
+1. **Company Description**: A brief 2-3 sentence description of what the company does
+2. **Industry**: The industry or sector the company operates in
+3. **Product/Service Name**: Main product or service name
+4. **Product Description**: What the product/service does and how it works
+5. **Value Proposition**: The key benefit or outcome the product delivers
+6. **Target Audience**: Who the product/service is for (job titles, company types, etc.)
+7. **Pain Points**: Problems or challenges the product solves (if mentioned)
+8. **Differentiators**: What makes the company/product unique or different from competitors
+9. **Social Proof**: Customer names, case studies, metrics, awards, or testimonials (if mentioned)
+
+Return a JSON object with these fields (use empty string if information is not found):
+
+{
+  "companyDescription": "string",
+  "industry": "string",
+  "productName": "string",
+  "productDescription": "string",
+  "valueProposition": "string",
+  "targetAudience": "string",
+  "painPoints": "string",
+  "differentiators": "string",
+  "socialProof": "string"
+}
+
+Be specific and extract actual information from the website. Do not make up information that isn't present in the content.`;
+
+  try {
+    const model = useOpenRouter ? "openai/gpt-4o" : "gpt-4o";
+    
+    const { text } = await generateText({
+      model: provider(model),
+      prompt,
+      maxOutputTokens: 2048,
+    });
+    
+    if (!text) {
+      console.error("[AI] No content in profile extraction response");
+      throw new Error("No response from AI");
+    }
+
+    const jsonContent = extractJsonFromResponse(text);
+    const parsed = JSON.parse(jsonContent.trim());
+    
+    console.log("[AI] Successfully extracted profile information");
+    
+    // Return only non-empty fields
+    const profile: Partial<UserProfile> = {};
+    if (parsed.companyDescription) profile.companyDescription = parsed.companyDescription;
+    if (parsed.industry) profile.industry = parsed.industry;
+    if (parsed.productName) profile.productName = parsed.productName;
+    if (parsed.productDescription) profile.productDescription = parsed.productDescription;
+    if (parsed.valueProposition) profile.valueProposition = parsed.valueProposition;
+    if (parsed.targetAudience) profile.targetAudience = parsed.targetAudience;
+    if (parsed.painPoints) profile.painPoints = parsed.painPoints;
+    if (parsed.differentiators) profile.differentiators = parsed.differentiators;
+    if (parsed.socialProof) profile.socialProof = parsed.socialProof;
+    
+    return profile;
+  } catch (error: any) {
+    console.error("[AI] Profile extraction error:", error?.message || error);
+    throw error;
+  }
+}
+
+// ============================================
+// Profile Extraction from Website
+// ============================================
+
+export interface ExtractedProfile {
+  companyDescription?: string;
+  productName?: string;
+  productDescription?: string;
+  valueProposition?: string;
+  targetAudience?: string;
+  industry?: string;
+  painPoints?: string;
+  differentiators?: string;
+}
+
+/**
+ * Extracts user profile information from website content using AI
+ * @param websiteContent - Markdown content from the company website
+ * @param companyName - Name of the company
+ * @returns Extracted profile fields
+ */

@@ -98,6 +98,7 @@ The application requires one of the following AI configurations:
 
 | Variable | Description |
 |----------|-------------|
+| `FIRECRAWL_API_KEY` | FireCrawl API key for web scraping and company research |
 | `SENDGRID_API_KEY` | SendGrid API key for email delivery |
 | `HUBSPOT_API_KEY` | HubSpot API key for CRM integration |
 | `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key for authentication |
@@ -200,6 +201,17 @@ The application requires one of the following AI configurations:
 2. Generate a Private App with CRM scopes
 3. Add the `HUBSPOT_API_KEY` environment variable
 4. Use the Integrations page to connect and sync contacts
+
+## FireCrawl Integration (Optional)
+
+FireCrawl enables web scraping and company research features:
+
+1. Create a FireCrawl account at https://firecrawl.dev
+2. Get your API key from the dashboard
+3. Add the `FIRECRAWL_API_KEY` environment variable
+4. Features enabled:
+   - **Prospect Research**: Automatically scrapes company websites and searches for recent news when detecting triggers
+   - **Profile Auto-fill**: Crawls your company website to automatically populate profile fields
 
 ## Clerk Authentication (Optional)
 

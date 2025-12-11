@@ -19,13 +19,13 @@ todos:
     status: completed
   - id: create-profile-extraction
     content: Create AI-powered profile extraction function that analyzes scraped website content
-    status: pending
+    status: completed
   - id: create-auto-fill-endpoint
     content: Create POST /api/profile/auto-fill endpoint that uses FireCrawl and AI to extract profile data
-    status: pending
+    status: completed
   - id: add-auto-fill-ui
     content: Add Auto-fill from Website button and functionality to SettingsPage component
-    status: pending
+    status: completed
   - id: update-schemas
     content: Update Zod schemas to include optional companyWebsite field in detectTriggersRequestSchema
     status: completed

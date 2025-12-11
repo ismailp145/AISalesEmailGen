@@ -1,8 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Loader2, Save, User, Building2, Package, Target } from "lucide-react";
+import { Loader2, Save, User, Building2, Package, Target, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ import { userProfileSchema, type UserProfile, defaultUserProfile } from "@shared
 
 export default function SettingsPage() {
   const { toast } = useToast();
+  const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
 
   const { data: profile, isLoading } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
@@ -64,8 +65,62 @@ export default function SettingsPage() {
     },
   });
 
+  const autoFillMutation = useMutation({
+    mutationFn: async () => {
+      const companyWebsite = form.getValues("companyWebsite");
+      const companyName = form.getValues("companyName");
+
+      if (!companyWebsite || !companyName) {
+        throw new Error("Please enter both company name and website URL first");
+      }
+
+      const response = await apiRequest("POST", "/api/profile/auto-fill", {
+        companyWebsite,
+        companyName,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to auto-fill profile");
+      }
+
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      const { extractedFields, fieldsCount } = data;
+      const newAutoFilledFields = new Set<string>();
+
+      // Merge extracted fields into form
+      Object.entries(extractedFields).forEach(([key, value]) => {
+        if (value && typeof value === "string" && value.trim()) {
+          form.setValue(key as keyof UserProfile, value as any);
+          newAutoFilledFields.add(key);
+        }
+      });
+
+      setAutoFilledFields(newAutoFilledFields);
+
+      toast({
+        title: "Profile auto-filled",
+        description: `Successfully extracted ${fieldsCount} fields from your website. Review and save when ready.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Auto-fill failed",
+        description: error?.message || "Could not auto-fill profile. Please try again or fill in manually.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleAutoFill = () => {
+    autoFillMutation.mutate();
+  };
+
   const onSubmit = (data: UserProfile) => {
     saveMutation.mutate(data);
+    setAutoFilledFields(new Set()); // Clear auto-filled indicators after save
   };
 
   if (isLoading) {
@@ -204,9 +259,35 @@ export default function SettingsPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-xs text-muted-foreground">Company Website</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://acme.com" className="h-9" {...field} data-testid="input-company-website" />
-                    </FormControl>
+                    <div className="flex gap-2">
+                      <FormControl>
+                        <Input placeholder="https://acme.com" className="h-9" {...field} data-testid="input-company-website" />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAutoFill}
+                        disabled={autoFillMutation.isPending || !field.value || !form.getValues("companyName")}
+                        className="whitespace-nowrap"
+                        data-testid="button-auto-fill"
+                      >
+                        {autoFillMutation.isPending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Auto-filling...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            Auto-fill
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <FormDescription className="text-xs">
+                      Click Auto-fill to extract company information from your website
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
