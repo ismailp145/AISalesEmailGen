@@ -7,6 +7,7 @@ import { SalesforceService, createSalesforceService, isSalesforceConfigured } fr
 import { GmailService, createGmailService, isGmailConfigured } from "./gmail";
 import { OutlookService, createOutlookService, isOutlookConfigured } from "./outlook";
 import { storage } from "./storage";
+import { isFirecrawlConfigured, researchCompany } from "./firecrawl";
 import { getCurrentUserId } from "./middleware/clerk";
 import { 
   generateEmailRequestSchema, 
@@ -101,6 +102,7 @@ export async function registerRoutes(
     return res.json({
       status: "ok",
       ai: aiStatus.configured ? "configured" : "not configured",
+      firecrawl: isFirecrawlConfigured() ? "configured" : "not configured",
       sendgrid: isSendGridConfigured() ? "configured" : "not configured",
       salesforce: isSalesforceConfigured() ? "configured" : "not configured",
       gmail: isGmailConfigured() ? "configured" : "not configured",
@@ -198,8 +200,45 @@ export async function registerRoutes(
         });
       }
 
-      const { prospect } = parsed.data;
-      const result = await detectTriggers(prospect);
+      const { prospect, companyWebsite } = parsed.data;
+      
+      // Prepare company data for trigger detection
+      let companyData: {
+        websiteInfo?: string;
+        recentNews?: Array<{ title: string; description: string; source: string; date: string }>;
+      } | undefined;
+
+      // If Firecrawl is configured and we have company info, research the company
+      if (isFirecrawlConfigured() && (companyWebsite || prospect.company)) {
+        try {
+          console.log("[API] Researching company with Firecrawl:", prospect.company);
+          
+          const research = await researchCompany(
+            prospect.company,
+            companyWebsite || undefined
+          );
+
+          companyData = {
+            websiteInfo: research.websiteData?.content,
+            recentNews: research.newsData.newsItems.map(news => ({
+              title: news.title,
+              description: news.description,
+              source: news.source || "Unknown",
+              date: news.publishedDate || "Recent",
+            })),
+          };
+
+          console.log("[API] Company research completed:", {
+            hasWebsiteData: !!research.websiteData,
+            newsCount: research.newsData.newsItems.length,
+          });
+        } catch (firecrawlError: any) {
+          // Log error but continue with trigger detection without company data
+          console.error("[API] Firecrawl error (continuing without company data):", firecrawlError?.message);
+        }
+      }
+
+      const result = await detectTriggers(prospect, companyData);
       
       return res.json(result);
     } catch (error: any) {

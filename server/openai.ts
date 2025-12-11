@@ -255,7 +255,13 @@ export async function generateEmailsBatch(
 // Trigger Detection
 // ============================================
 
-function buildTriggerDetectionPrompt(prospect: Prospect): string {
+function buildTriggerDetectionPrompt(
+  prospect: Prospect,
+  companyData?: {
+    websiteInfo?: string;
+    recentNews?: Array<{ title: string; description: string; source: string; date: string }>;
+  }
+): string {
   const linkedinContext = prospect.linkedinUrl 
     ? `\nLinkedIn Profile: ${prospect.linkedinUrl}` 
     : "";
@@ -264,18 +270,41 @@ function buildTriggerDetectionPrompt(prospect: Prospect): string {
     ? `\nAdditional Context: ${prospect.notes}` 
     : "";
 
+  // Build company website context
+  let websiteContext = "";
+  if (companyData?.websiteInfo) {
+    websiteContext = `\n\nCOMPANY WEBSITE DATA (use this for accurate, real information about the company):
+${companyData.websiteInfo.substring(0, 2000)}...
+
+This is REAL data from their website. Use it to create specific, accurate triggers about their products, services, and company focus.`;
+  }
+
+  // Build recent news context
+  let newsContext = "";
+  if (companyData?.recentNews && companyData.recentNews.length > 0) {
+    newsContext = `\n\nRECENT NEWS ABOUT ${prospect.company} (use these REAL news items as triggers):
+${companyData.recentNews.map((news, i) => 
+  `${i + 1}. ${news.title}
+   ${news.description}
+   Source: ${news.source} | Date: ${news.date}`
+).join("\n\n")}
+
+These are REAL, recent news articles. Prioritize creating triggers from these actual news items.`;
+  }
+
+  const hasRealData = websiteContext || newsContext;
+  const dataGuidance = hasRealData 
+    ? "IMPORTANT: You have access to REAL company data and news. Use this information to create SPECIFIC, ACCURATE triggers. Do NOT make up generic triggers when you have real data available."
+    : "Note: No real-time data available. Generate realistic, plausible triggers based on the company name, industry, and prospect's role.";
+
   return `You are an expert sales researcher. Your job is to identify potential "triggers" - recent events or activities that could be used as personalized conversation starters in a cold email.
 
-Analyze the following prospect and their company. Generate realistic, plausible triggers based on what you know about:
-- The company and its industry
-- Common activities for someone in their role
-- Recent trends in their sector
-- Typical events for companies of this type
+${dataGuidance}
 
 PROSPECT INFORMATION:
 Name: ${prospect.firstName} ${prospect.lastName}
 Title: ${prospect.title}
-Company: ${prospect.company}${linkedinContext}${notesContext}
+Company: ${prospect.company}${linkedinContext}${notesContext}${websiteContext}${newsContext}
 
 Generate 4-6 potential triggers. For each trigger, consider:
 1. NEWS - Company announcements, press releases, product launches, expansions
@@ -300,14 +329,26 @@ Return a JSON object with:
   "prospectSummary": "Brief 2-3 sentence summary of who this prospect is and key insights about their role/company"
 }
 
-Make the triggers feel authentic and specific to this person/company. Avoid generic triggers.
+Make the triggers feel authentic and specific to this person/company. ${hasRealData ? "Base triggers on the REAL data provided above." : "Avoid generic triggers."}
 Prioritize triggers with higher relevance that would make great email openers.`;
 }
 
-export async function detectTriggers(prospect: Prospect): Promise<DetectTriggersResponse> {
-  const prompt = buildTriggerDetectionPrompt(prospect);
+export async function detectTriggers(
+  prospect: Prospect,
+  companyData?: {
+    websiteInfo?: string;
+    recentNews?: Array<{ title: string; description: string; source: string; date: string }>;
+  }
+): Promise<DetectTriggersResponse> {
+  const prompt = buildTriggerDetectionPrompt(prospect, companyData);
 
   console.log("[AI] Starting trigger detection for:", prospect.firstName, prospect.lastName, "@", prospect.company);
+  if (companyData?.websiteInfo) {
+    console.log("[AI] Using company website data");
+  }
+  if (companyData?.recentNews && companyData.recentNews.length > 0) {
+    console.log("[AI] Using", companyData.recentNews.length, "recent news items");
+  }
 
   try {
     const model = useOpenRouter ? "openai/gpt-4o" : "gpt-4o";
@@ -352,6 +393,12 @@ export async function detectTriggers(prospect: Prospect): Promise<DetectTriggers
     return {
       triggers: triggersWithIds,
       prospectSummary: parsed.prospectSummary || "",
+      companyData: companyData ? {
+        websiteInfo: companyData.websiteInfo ? "Website data included" : undefined,
+        recentNews: companyData.recentNews && companyData.recentNews.length > 0 
+          ? `${companyData.recentNews.length} news items found` 
+          : undefined,
+      } : undefined,
     };
   } catch (error: any) {
     console.error("[AI] Trigger detection error:", error?.message || error);

@@ -50,6 +50,7 @@ const formSchema = z.object({
   title: z.string().min(1, "Required"),
   email: z.string().email("Invalid email"),
   linkedinUrl: z.string().url("Invalid URL").optional().or(z.literal("")),
+  companyWebsite: z.string().url("Invalid URL").optional().or(z.literal("")),
   linkedinContent: z.string().optional(),
   notes: z.string().optional(),
   tone: z.enum(["casual", "professional", "hyper-personal"]),
@@ -104,6 +105,7 @@ export function SingleEmailForm() {
       title: "",
       email: "",
       linkedinUrl: "",
+      companyWebsite: "",
       linkedinContent: "",
       notes: "",
       tone: "professional",
@@ -123,6 +125,7 @@ export function SingleEmailForm() {
           linkedinUrl: data.linkedinUrl || undefined,
           notes: data.notes || undefined,
         },
+        companyWebsite: data.companyWebsite || undefined,
       });
       return response.json() as Promise<DetectTriggersResponse>;
     },
@@ -379,6 +382,31 @@ export function SingleEmailForm() {
                   )}
                 />
               </div>
+
+              <FormField
+                control={form.control}
+                name="companyWebsite"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs text-muted-foreground">
+                      Company Website (optional)
+                      <span className="ml-2 text-primary">✨ Enhanced triggers</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="https://acme.com" 
+                        className="h-9"
+                        {...field} 
+                        data-testid="input-company-website" 
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      We'll scrape their website and search for recent news to find real, specific triggers
+                    </p>
+                  </FormItem>
+                )}
+              />
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField

@@ -428,6 +428,7 @@ export interface DetectedTrigger {
 
 export const detectTriggersRequestSchema = z.object({
   prospect: prospectSchema,
+  companyWebsite: z.string().url("Invalid URL").optional().or(z.literal("")),
 });
 
 export type DetectTriggersRequest = z.infer<typeof detectTriggersRequestSchema>;
@@ -435,4 +436,8 @@ export type DetectTriggersRequest = z.infer<typeof detectTriggersRequestSchema>;
 export interface DetectTriggersResponse {
   triggers: DetectedTrigger[];
   prospectSummary: string;
+  companyData?: {
+    websiteInfo?: string;
+    recentNews?: string;
+  };
 }
