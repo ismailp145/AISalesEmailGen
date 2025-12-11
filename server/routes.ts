@@ -180,6 +180,34 @@ export async function registerRoutes(
     }
   });
 
+  // Helper function to normalize URLs
+  const normalizeUrl = (url: string): string => {
+    if (!url || typeof url !== "string") {
+      return url;
+    }
+    
+    // Trim whitespace
+    let normalized = url.trim();
+    
+    // If empty after trimming, return as is
+    if (!normalized) {
+      return normalized;
+    }
+    
+    // If it doesn't start with http:// or https://, add https://
+    if (!normalized.match(/^https?:\/\//i)) {
+      // If it starts with www., add https://
+      if (normalized.startsWith("www.")) {
+        normalized = `https://${normalized}`;
+      } else {
+        // Otherwise, add https://
+        normalized = `https://${normalized}`;
+      }
+    }
+    
+    return normalized;
+  };
+
   // Detect triggers for a prospect
   app.post("/api/detect-triggers", async (req, res) => {
     try {
@@ -191,11 +219,36 @@ export async function registerRoutes(
         });
       }
 
-      const parsed = detectTriggersRequestSchema.safeParse(req.body);
+      // Normalize companyWebsite if provided
+      const rawCompanyWebsite = req.body?.companyWebsite;
+      const normalizedWebsite = rawCompanyWebsite && rawCompanyWebsite.trim() 
+        ? normalizeUrl(rawCompanyWebsite) 
+        : rawCompanyWebsite;
+
+      // Validate with normalized URL
+      const parsed = detectTriggersRequestSchema.safeParse({
+        ...req.body,
+        companyWebsite: normalizedWebsite,
+      });
       
       if (!parsed.success) {
+        const errors = parsed.error.flatten().fieldErrors;
+        const errorMessages: string[] = [];
+        
+        if (errors.companyWebsite) {
+          errorMessages.push(`Website: ${errors.companyWebsite[0]}`);
+        }
+        if (errors.prospect) {
+          Object.entries(errors.prospect).forEach(([field, messages]) => {
+            if (messages && messages[0]) {
+              errorMessages.push(`${field}: ${messages[0]}`);
+            }
+          });
+        }
+        
         return res.status(400).json({ 
-          error: "Invalid request", 
+          error: "Invalid request",
+          message: errorMessages.join(". ") || "Please check your input and try again.",
           details: parsed.error.flatten() 
         });
       }
@@ -564,16 +617,40 @@ export async function registerRoutes(
         });
       }
 
+      // Get raw input
+      const rawCompanyWebsite = req.body?.companyWebsite;
+      const rawCompanyName = req.body?.companyName;
+
+      // Normalize the URL before validation
+      const normalizedWebsite = rawCompanyWebsite ? normalizeUrl(rawCompanyWebsite) : "";
+
       const schema = z.object({
-        companyWebsite: z.string().url("Invalid URL"),
+        companyWebsite: z.string().min(1, "Company website is required").url({
+          message: "Please enter a valid website URL (e.g., https://example.com or www.example.com)"
+        }),
         companyName: z.string().min(1, "Company name is required"),
       });
 
-      const parsed = schema.safeParse(req.body);
+      // Validate with normalized URL
+      const parsed = schema.safeParse({
+        companyWebsite: normalizedWebsite,
+        companyName: rawCompanyName,
+      });
       
       if (!parsed.success) {
+        const errors = parsed.error.flatten().fieldErrors;
+        const errorMessages: string[] = [];
+        
+        if (errors.companyWebsite) {
+          errorMessages.push(`Website: ${errors.companyWebsite[0]}`);
+        }
+        if (errors.companyName) {
+          errorMessages.push(`Company Name: ${errors.companyName[0]}`);
+        }
+        
         return res.status(400).json({
           error: "Invalid request",
+          message: errorMessages.join(". ") || "Please check your input and try again.",
           details: parsed.error.flatten(),
         });
       }
