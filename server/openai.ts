@@ -491,25 +491,3 @@ Be specific and extract actual information from the website. Do not make up info
     throw error;
   }
 }
-
-// ============================================
-// Profile Extraction from Website
-// ============================================
-
-export interface ExtractedProfile {
-  companyDescription?: string;
-  productName?: string;
-  productDescription?: string;
-  valueProposition?: string;
-  targetAudience?: string;
-  industry?: string;
-  painPoints?: string;
-  differentiators?: string;
-}
-
-/**
- * Extracts user profile information from website content using AI
- * @param websiteContent - Markdown content from the company website
- * @param companyName - Name of the company
- * @returns Extracted profile fields
- */

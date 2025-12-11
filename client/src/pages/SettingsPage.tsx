@@ -16,7 +16,6 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { userProfileSchema, type UserProfile, defaultUserProfile } from "@shared/schema";

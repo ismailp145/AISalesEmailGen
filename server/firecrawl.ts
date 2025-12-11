@@ -297,7 +297,7 @@ function determineRelevance(
  */
 export async function crawlCompanyWebsite(url: string): Promise<string> {
   if (!firecrawl) {
-  throw new Error("Firecrawl is not configured. Please set FIRECRAWL_API_KEY.");
+    throw new Error("Firecrawl is not configured. Please set FIRECRAWL_API_KEY.");
   }
 
   try {

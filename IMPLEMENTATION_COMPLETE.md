@@ -269,7 +269,7 @@ Good companies to test with:
 
 ## Dependencies
 
-- **@mendable/firecrawl-js**: ^1.x (installed)
+- **@mendable/firecrawl-js**: ^4.8.3 (installed)
 - **Firecrawl API**: Requires API key from https://www.firecrawl.dev/
 
 ---
