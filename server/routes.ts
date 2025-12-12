@@ -239,27 +239,11 @@ export async function registerRoutes(
           error: "Rate limit exceeded",
           message: "Too many requests. Please wait a moment and try again.",
         });
-          if (Array.isArray(errors.prospect)) {
-            // prospect is a flat field, just an array of error messages
-            errors.prospect.forEach((msg) => {
-              if (msg) errorMessages.push(`Prospect: ${msg}`);
-            });
-          } else if (typeof errors.prospect === "object" && errors.prospect !== null) {
-            // prospect is a nested object, iterate over its fields
-            Object.entries(errors.prospect).forEach(([field, messages]) => {
-              if (messages && messages[0]) {
-                errorMessages.push(`${field}: ${messages[0]}`);
-              }
-            });
-          }
-          } else if (typeof errors.prospect === "object" && errors.prospect !== null) {
-            // prospect is a nested object, iterate over its fields
-            Object.entries(errors.prospect).forEach(([field, messages]) => {
-              if (messages && messages[0]) {
-                errorMessages.push(`${field}: ${messages[0]}`);
-              }
-            });
-          }
+      }
+
+      return res.status(500).json({
+        error: "Failed to generate email",
+        message: error?.message || "An unexpected error occurred. Please try again.",
       });
     }
   });
@@ -314,8 +298,9 @@ export async function registerRoutes(
           } else if (typeof errors.prospect === "object" && errors.prospect !== null) {
             // prospect is a nested object, iterate over its fields
             Object.entries(errors.prospect).forEach(([field, messages]) => {
-              if (messages && messages[0]) {
-                errorMessages.push(`${field}: ${messages[0]}`);
+              const firstMessage = Array.isArray(messages) ? messages[0] : undefined;
+              if (firstMessage) {
+                errorMessages.push(`${field}: ${firstMessage}`);
               }
             });
           }
