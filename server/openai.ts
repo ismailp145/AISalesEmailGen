@@ -34,6 +34,43 @@ function extractJsonFromResponse(text: string): string {
   return text;
 }
 
+/**
+ * Intelligently truncates text to a maximum length, respecting word boundaries.
+ * Prefers truncating at sentence boundaries, falls back to word boundaries.
+ * 
+ * @param text - The text to truncate
+ * @param maxLength - Maximum character length
+ * @returns Truncated text that ends at a word or sentence boundary
+ */
+function truncateIntelligently(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  const truncated = text.substring(0, maxLength);
+  
+  // First, try to truncate at a sentence boundary (period, exclamation, question mark followed by space)
+  // Look for sentence endings in reverse order
+  for (let i = truncated.length - 1; i >= maxLength * 0.7; i--) {
+    if (/[.!?]/.test(truncated[i])) {
+      // Check if followed by whitespace and optionally a capital letter
+      const after = truncated.substring(i + 1, Math.min(i + 10, truncated.length));
+      if (/^\s+[A-Z]/.test(after) || /^\s*$/.test(after)) {
+        return truncated.substring(0, i + 1).trim();
+      }
+    }
+  }
+
+  // Fall back to word boundary truncation (find last space)
+  const lastSpaceIndex = truncated.lastIndexOf(' ');
+  if (lastSpaceIndex > maxLength * 0.8) {
+    return truncated.substring(0, lastSpaceIndex).trim();
+  }
+
+  // If no good boundary found, return truncated text (should be rare)
+  return truncated.trim();
+}
+
 interface EmailGenerationOptions {
   prospect: Prospect;
   tone: "casual" | "professional" | "hyper-personal";
@@ -273,8 +310,9 @@ function buildTriggerDetectionPrompt(
   // Build company website context
   let websiteContext = "";
   if (companyData?.websiteInfo) {
+    const truncatedWebsiteInfo = truncateIntelligently(companyData.websiteInfo, 2000);
     websiteContext = `\n\nCOMPANY WEBSITE DATA (use this for accurate, real information about the company):
-${companyData.websiteInfo.substring(0, 2000)}...
+${truncatedWebsiteInfo}${companyData.websiteInfo.length > 2000 ? "..." : ""}
 
 This is REAL data from their website. Use it to create specific, accurate triggers about their products, services, and company focus.`;
   }
@@ -424,7 +462,7 @@ export async function extractProfileFromWebsite(
 Analyze the following website content from ${companyName} and extract relevant information to fill out a sales profile.
 
 WEBSITE CONTENT:
-${websiteContent.substring(0, 8000)}
+${truncateIntelligently(websiteContent, 8000)}${websiteContent.length > 8000 ? "..." : ""}
 
 Extract and structure the following information from the website content:
 
@@ -435,18 +473,18 @@ Extract and structure the following information from the website content:
 5. **Value Proposition**: The key benefit or outcome the product delivers
 6. **Target Audience**: Who the product/service is for (job titles, company types, etc.)
 7. **Pain Points**: Problems or challenges the product solves (if mentioned)
-8. **Differentiators**: What makes the company/product unique or different from competitors
-9. **Social Proof**: Customer names, case studies, metrics, awards, or testimonials (if mentioned)
-
-Return a JSON object with these fields (use empty string if information is not found):
-
-{
-  "companyDescription": "string",
-  "industry": "string",
-  "productName": "string",
-  "productDescription": "string",
-  "valueProposition": "string",
-  "targetAudience": "string",
+    // Return all fields, including empty strings or nulls if not present
+    const profile: Partial<UserProfile> = {
+      companyDescription: parsed.hasOwnProperty('companyDescription') ? parsed.companyDescription : null,
+      industry: parsed.hasOwnProperty('industry') ? parsed.industry : null,
+      productName: parsed.hasOwnProperty('productName') ? parsed.productName : null,
+      productDescription: parsed.hasOwnProperty('productDescription') ? parsed.productDescription : null,
+      valueProposition: parsed.hasOwnProperty('valueProposition') ? parsed.valueProposition : null,
+      targetAudience: parsed.hasOwnProperty('targetAudience') ? parsed.targetAudience : null,
+      painPoints: parsed.hasOwnProperty('painPoints') ? parsed.painPoints : null,
+      differentiators: parsed.hasOwnProperty('differentiators') ? parsed.differentiators : null,
+      socialProof: parsed.hasOwnProperty('socialProof') ? parsed.socialProof : null,
+    };
   "painPoints": "string",
   "differentiators": "string",
   "socialProof": "string"
@@ -473,17 +511,19 @@ Be specific and extract actual information from the website. Do not make up info
     
     console.log("[AI] Successfully extracted profile information");
     
-    // Return only non-empty fields
-    const profile: Partial<UserProfile> = {};
-    if (parsed.companyDescription) profile.companyDescription = parsed.companyDescription;
-    if (parsed.industry) profile.industry = parsed.industry;
-    if (parsed.productName) profile.productName = parsed.productName;
-    if (parsed.productDescription) profile.productDescription = parsed.productDescription;
-    if (parsed.valueProposition) profile.valueProposition = parsed.valueProposition;
-    if (parsed.targetAudience) profile.targetAudience = parsed.targetAudience;
-    if (parsed.painPoints) profile.painPoints = parsed.painPoints;
-    if (parsed.differentiators) profile.differentiators = parsed.differentiators;
-    if (parsed.socialProof) profile.socialProof = parsed.socialProof;
+    // Return all fields that exist in the parsed response, including empty strings if explicitly set by AI
+    // This distinguishes between fields that weren't found (undefined/not included) vs fields that were empty (empty string)
+const profile: Partial<UserProfile> = {  
+      companyDescription: parsed.hasOwnProperty('companyDescription') ? parsed.companyDescription : null,  
+      industry: parsed.hasOwnProperty('industry') ? parsed.industry : null,  
+      productName: parsed.hasOwnProperty('productName') ? parsed.productName : null,  
+      productDescription: parsed.hasOwnProperty('productDescription') ? parsed.productDescription : null,  
+      valueProposition: parsed.hasOwnProperty('valueProposition') ? parsed.valueProposition : null,  
+      targetAudience: parsed.hasOwnProperty('targetAudience') ? parsed.targetAudience : null,  
+      painPoints: parsed.hasOwnProperty('painPoints') ? parsed.painPoints : null,  
+      differentiators: parsed.hasOwnProperty('differentiators') ? parsed.differentiators : null,  
+      socialProof: parsed.hasOwnProperty('socialProof') ? parsed.socialProof : null,  
+    };  
     
     return profile;
   } catch (error: any) {

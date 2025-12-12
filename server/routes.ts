@@ -9,6 +9,7 @@ import { OutlookService, createOutlookService, isOutlookConfigured } from "./out
 import { storage } from "./storage";
 import { isFirecrawlConfigured, researchCompany, crawlCompanyWebsite } from "./firecrawl";
 import { getCurrentUserId } from "./middleware/clerk";
+import { normalizeUrl } from "./url-utils";
 import { 
   generateEmailRequestSchema, 
   bulkGenerateRequestSchema, 
@@ -73,6 +74,73 @@ function getBaseUrl(req: any): string {
   const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
   return `${protocol}://${host}`;
+}
+
+/**
+ * Validates website content quality for profile extraction
+ * Checks for minimum length, meaningful content indicators, and common error page patterns
+ * @param content - The website content (markdown) to validate
+ * @returns Object with isValid flag and optional error message
+ */
+function validateWebsiteContent(content: string | null | undefined): { isValid: boolean; error?: string } {
+  // Check if content exists
+  if (!content || typeof content !== 'string') {
+    return { isValid: false, error: "No content extracted from website" };
+  }
+
+  // Minimum length threshold (increased from 100 to 300 characters)
+  const MIN_LENGTH = 300;
+  if (content.length < MIN_LENGTH) {
+    return { 
+      isValid: false, 
+      error: `Content too short (${content.length} characters). Minimum ${MIN_LENGTH} characters required.` 
+    };
+  }
+
+  // Check for common error page indicators
+  const errorIndicators = [
+    /404.*not.*found/i,
+    /page.*not.*found/i,
+    /error.*404/i,
+    /access.*denied/i,
+    /forbidden/i,
+    /server.*error/i,
+    /internal.*error/i,
+    /coming.*soon/i,
+    /under.*construction/i,
+    /domain.*for.*sale/i,
+    /this.*domain.*may.*be.*for.*sale/i,
+  ];
+
+  const lowerContent = content.toLowerCase();
+  for (const pattern of errorIndicators) {
+    if (pattern.test(lowerContent)) {
+      return { 
+        isValid: false, 
+        error: "Website appears to be an error page or placeholder" 
+      };
+    }
+  }
+
+  // Check for meaningful content indicators (business-related keywords)
+  // This helps filter out pages that are long but contain no useful information
+  const meaningfulIndicators = [
+    /\b(company|business|product|service|about|contact|team|solution|customer|client)\b/i,
+    /\b(we|our|us|they|their)\b/i, // Pronouns indicating descriptive content
+    /[a-z]{4,}/i, // At least some longer words (not just short codes/links)
+  ];
+
+  const hasMeaningfulContent = meaningfulIndicators.some(pattern => pattern.test(content));
+  
+  if (!hasMeaningfulContent && content.length < 500) {
+    // If content is between 300-500 chars and has no meaningful indicators, reject it
+    return { 
+      isValid: false, 
+      error: "Content does not appear to contain meaningful business information" 
+    };
+  }
+
+  return { isValid: true };
 }
 
 function checkAIIntegration(): { configured: boolean; message?: string } {
@@ -171,42 +239,30 @@ export async function registerRoutes(
           error: "Rate limit exceeded",
           message: "Too many requests. Please wait a moment and try again.",
         });
-      }
-      
-      return res.status(500).json({ 
-        error: "Failed to generate email",
-        message: error?.message || "An unexpected error occurred. Please try again."
+          if (Array.isArray(errors.prospect)) {
+            // prospect is a flat field, just an array of error messages
+            errors.prospect.forEach((msg) => {
+              if (msg) errorMessages.push(`Prospect: ${msg}`);
+            });
+          } else if (typeof errors.prospect === "object" && errors.prospect !== null) {
+            // prospect is a nested object, iterate over its fields
+            Object.entries(errors.prospect).forEach(([field, messages]) => {
+              if (messages && messages[0]) {
+                errorMessages.push(`${field}: ${messages[0]}`);
+              }
+            });
+          }
+          } else if (typeof errors.prospect === "object" && errors.prospect !== null) {
+            // prospect is a nested object, iterate over its fields
+            Object.entries(errors.prospect).forEach(([field, messages]) => {
+              if (messages && messages[0]) {
+                errorMessages.push(`${field}: ${messages[0]}`);
+              }
+            });
+          }
       });
     }
   });
-
-  // Helper function to normalize URLs
-  const normalizeUrl = (url: string): string => {
-    if (!url || typeof url !== "string") {
-      return url;
-    }
-    
-    // Trim whitespace
-    let normalized = url.trim();
-    
-    // If empty after trimming, return as is
-    if (!normalized) {
-      return normalized;
-    }
-    
-    // If it doesn't start with http:// or https://, add https://
-    if (!normalized.match(/^https?:\/\//i)) {
-      // If it starts with www., add https://
-      if (normalized.startsWith("www.")) {
-        normalized = `https://${normalized}`;
-      } else {
-        // Otherwise, add https://
-        normalized = `https://${normalized}`;
-      }
-    }
-    
-    return normalized;
-  };
 
   // Detect triggers for a prospect
   app.post("/api/detect-triggers", async (req, res) => {
@@ -221,9 +277,20 @@ export async function registerRoutes(
 
       // Normalize companyWebsite if provided
       const rawCompanyWebsite = req.body?.companyWebsite;
-      const normalizedWebsite = rawCompanyWebsite && rawCompanyWebsite.trim() 
-        ? normalizeUrl(rawCompanyWebsite) 
-        : rawCompanyWebsite;
+      let normalizedWebsite: string | undefined;
+      
+      if (rawCompanyWebsite && rawCompanyWebsite.trim()) {
+        try {
+          normalizedWebsite = normalizeUrl(rawCompanyWebsite);
+        } catch (error) {
+          return res.status(400).json({
+            error: "Invalid URL",
+            message: error instanceof Error ? error.message : "The provided URL is not allowed for security reasons.",
+          });
+        }
+      } else {
+        normalizedWebsite = rawCompanyWebsite;
+      }
 
       // Validate with normalized URL
       const parsed = detectTriggersRequestSchema.safeParse({
@@ -239,11 +306,19 @@ export async function registerRoutes(
           errorMessages.push(`Website: ${errors.companyWebsite[0]}`);
         }
         if (errors.prospect) {
-          Object.entries(errors.prospect).forEach(([field, messages]) => {
-            if (messages && messages[0]) {
-              errorMessages.push(`${field}: ${messages[0]}`);
-            }
-          });
+          if (Array.isArray(errors.prospect)) {
+            // prospect is a flat field, just an array of error messages
+            errors.prospect.forEach((msg) => {
+              if (msg) errorMessages.push(`Prospect: ${msg}`);
+            });
+          } else if (typeof errors.prospect === "object" && errors.prospect !== null) {
+            // prospect is a nested object, iterate over its fields
+            Object.entries(errors.prospect).forEach(([field, messages]) => {
+              if (messages && messages[0]) {
+                errorMessages.push(`${field}: ${messages[0]}`);
+              }
+            });
+          }
         }
         
         return res.status(400).json({ 
@@ -622,7 +697,17 @@ export async function registerRoutes(
       const rawCompanyName = req.body?.companyName;
 
       // Normalize the URL before validation
-      const normalizedWebsite = rawCompanyWebsite ? normalizeUrl(rawCompanyWebsite) : "";
+      let normalizedWebsite = "";
+      if (rawCompanyWebsite) {
+        try {
+          normalizedWebsite = normalizeUrl(rawCompanyWebsite);
+        } catch (error) {
+          return res.status(400).json({
+            error: "Invalid URL",
+            message: error instanceof Error ? error.message : "The provided URL is not allowed for security reasons.",
+          });
+        }
+      }
 
       const schema = z.object({
         companyWebsite: z.string().min(1, "Company website is required").url({
@@ -662,10 +747,12 @@ export async function registerRoutes(
       // Crawl the company website
       const websiteContent = await crawlCompanyWebsite(companyWebsite);
 
-      if (!websiteContent || websiteContent.length < 100) {
+      // Validate website content quality
+      const validation = validateWebsiteContent(websiteContent);
+      if (!validation.isValid) {
         return res.status(400).json({
           error: "Insufficient content",
-          message: "Could not extract enough content from the website. Please try a different URL or fill in manually.",
+          message: validation.error || "Could not extract enough meaningful content from the website. Please try a different URL or fill in manually.",
         });
       }
 

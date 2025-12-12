@@ -68,8 +68,7 @@ export async function scrapeCompanyWebsite(url: string): Promise<CompanyWebsiteD
       },
     };
   } catch (error: any) {
-    console.error("[Firecrawl] Error scraping website:", error?.message || error);
-    throw new Error(`Failed to scrape company website: ${error?.message || "Unknown error"}`);
+    handleFirecrawlError(error, "scraping company website");
   }
 }
 
@@ -166,8 +165,7 @@ export async function searchCompanyNews(
       searchQuery,
     };
   } catch (error: any) {
-    console.error("[Firecrawl] Error searching for news:", error?.message || error);
-    throw new Error(`Failed to search for company news: ${error?.message || "Unknown error"}`);
+    handleFirecrawlError(error, "searching for company news");
   }
 }
 
@@ -202,7 +200,10 @@ export async function researchCompany(
   } = {
     newsData: newsData.status === "fulfilled" 
       ? newsData.value 
-      : { companyName, newsItems: [], searchQuery: "" },
+       : (() => {  
+          console.error("[Firecrawl] News search failed for:", companyName, "Reason:", newsData.reason);  
+          return { companyName, newsItems: [], searchQuery: "", error: newsData.reason instanceof Error ? newsData.reason.message : String(newsData.reason) };  
+        })(),  
   };
 
   if (websiteData.status === "fulfilled" && websiteData.value) {
@@ -217,6 +218,30 @@ export async function researchCompany(
 // ============================================
 // Helper Functions
 // ============================================
+
+/**
+ * Handles Firecrawl errors with specific error messages and logging
+ * @param error - The error object caught
+ * @param context - Context string describing the operation (e.g., "scraping company website")
+ * @throws Error with formatted message and original error as cause
+ */
+function handleFirecrawlError(error: any, context: string): never {
+  // Log the full error object for debugging
+  console.error(`[Firecrawl] Error ${context}:`, error);
+
+  // Attempt to provide more specific error messages
+  let errorMsg = "Unknown error";
+  if (error?.response?.status === 429) {
+    errorMsg = `Rate limit exceeded while ${context}.`;
+  } else if (error?.code === "ENOTFOUND" || error?.code === "ECONNREFUSED" || error?.code === "ECONNRESET") {
+    errorMsg = `Network error while ${context}: ${error.message || error.code}`;
+  } else if (error?.message) {
+    errorMsg = error.message;
+  }
+
+  // Throw a new error, preserving the original error as the cause (Node.js >= 16.9.0)
+  throw new Error(`Failed to ${context}: ${errorMsg}`, { cause: error });
+}
 
 /**
  * Type guard to check if result is a SearchResultNews
@@ -239,7 +264,8 @@ function extractDomain(url: string): string {
   try {
     const urlObj = new URL(url);
     return urlObj.hostname.replace("www.", "");
-  } catch {
+  } catch (error) {
+    console.error(`[extractDomain] Failed to parse URL "${url}":`, error);
     return "Unknown";
   }
 }
@@ -314,7 +340,6 @@ export async function crawlCompanyWebsite(url: string): Promise<string> {
 
     return scrapeResult.markdown || "";
   } catch (error: any) {
-    console.error("[Firecrawl] Error crawling website:", error?.message || error);
-    throw new Error(`Failed to crawl company website: ${error?.message || "Unknown error"}`);
+    handleFirecrawlError(error, "crawling company website");
   }
 }
