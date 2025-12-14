@@ -10,7 +10,10 @@ import {
   sequenceSteps,
   sequenceEnrollments,
   scheduledEmails,
+  SUBSCRIPTION_LIMITS,
   type UserProfile,
+  type UserSubscription,
+  type SubscriptionTier,
   type Prospect,
   type ProspectWithStatus,
   type GeneratedEmail,
@@ -33,6 +36,7 @@ import {
   type EnrollmentStatus,
   type EmailActivityRecord,
   defaultUserProfile,
+  defaultUserSubscription,
 } from "@shared/schema";
 
 // Extended CRM connection with full OAuth data
@@ -60,6 +64,13 @@ export interface IStorage {
   // User profile operations
   getUserProfile(userId: string): Promise<UserProfile>;
   saveUserProfile(userId: string, profile: UserProfile): Promise<UserProfile>;
+  
+  // Subscription operations
+  getSubscriptionInfo(userId: string): Promise<UserSubscription>;
+  incrementEmailUsage(userId: string): Promise<void>;
+  checkEmailLimit(userId: string): Promise<{ allowed: boolean; used: number; limit: number; tier: SubscriptionTier }>;
+  resetMonthlyUsage(userId: string): Promise<void>;
+  updateSubscriptionTier(userId: string, tier: SubscriptionTier, stripeData?: { customerId?: string; subscriptionId?: string; startsAt?: Date; endsAt?: Date }): Promise<void>;
   
   // Campaign/Prospect operations (in-memory for bulk campaigns)
   createCampaign(prospects: Prospect[]): Promise<ProspectWithStatus[]>;
@@ -204,6 +215,151 @@ export class DatabaseStorage implements IStorage {
     }
     
     return profile;
+  }
+
+  // ============================================
+  // Subscription Operations
+  // ============================================
+
+  async getSubscriptionInfo(userId: string): Promise<UserSubscription> {
+    const [profile] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    if (!profile) {
+      return defaultUserSubscription;
+    }
+    
+    return {
+      subscriptionTier: profile.subscriptionTier as SubscriptionTier,
+      emailsUsedThisMonth: profile.emailsUsedThisMonth,
+      emailsUsedThisMonthResetAt: profile.emailsUsedThisMonthResetAt,
+      subscriptionStartsAt: profile.subscriptionStartsAt,
+      subscriptionEndsAt: profile.subscriptionEndsAt,
+      stripeCustomerId: profile.stripeCustomerId,
+      stripeSubscriptionId: profile.stripeSubscriptionId,
+    };
+  }
+
+  async incrementEmailUsage(userId: string): Promise<void> {
+    const [profile] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    if (!profile) {
+      // Create a new profile with initial email usage
+      await db.insert(userProfiles).values({
+        userId,
+        senderName: "",
+        companyName: "",
+        emailsUsedThisMonth: 1,
+        emailsUsedThisMonthResetAt: new Date(),
+      });
+      return;
+    }
+    
+    // Check if we need to reset the monthly counter
+    const now = new Date();
+    const resetAt = profile.emailsUsedThisMonthResetAt;
+    const shouldReset = resetAt && (
+      now.getMonth() !== resetAt.getMonth() || 
+      now.getFullYear() !== resetAt.getFullYear()
+    );
+    
+    if (shouldReset) {
+      await db.update(userProfiles)
+        .set({ 
+          emailsUsedThisMonth: 1,
+          emailsUsedThisMonthResetAt: now,
+          updatedAt: now,
+        })
+        .where(eq(userProfiles.id, profile.id));
+    } else {
+      await db.update(userProfiles)
+        .set({ 
+          emailsUsedThisMonth: profile.emailsUsedThisMonth + 1,
+          updatedAt: now,
+        })
+        .where(eq(userProfiles.id, profile.id));
+    }
+  }
+
+  async checkEmailLimit(userId: string): Promise<{ allowed: boolean; used: number; limit: number; tier: SubscriptionTier }> {
+    const subscription = await this.getSubscriptionInfo(userId);
+    const tier = subscription.subscriptionTier as SubscriptionTier;
+    const limits = SUBSCRIPTION_LIMITS[tier];
+    
+    // Check if we need to reset the monthly counter
+    const now = new Date();
+    const resetAt = subscription.emailsUsedThisMonthResetAt;
+    const shouldReset = resetAt && (
+      now.getMonth() !== resetAt.getMonth() || 
+      now.getFullYear() !== resetAt.getFullYear()
+    );
+    
+    const used = shouldReset ? 0 : subscription.emailsUsedThisMonth;
+    const limit = limits.emailsPerMonth;
+    const allowed = used < limit;
+    
+    return { allowed, used, limit, tier };
+  }
+
+  async resetMonthlyUsage(userId: string): Promise<void> {
+    await db.update(userProfiles)
+      .set({ 
+        emailsUsedThisMonth: 0,
+        emailsUsedThisMonthResetAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(userProfiles.userId, userId));
+  }
+
+  async updateSubscriptionTier(
+    userId: string, 
+    tier: SubscriptionTier, 
+    stripeData?: { customerId?: string; subscriptionId?: string; startsAt?: Date; endsAt?: Date }
+  ): Promise<void> {
+    const [existing] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    const updateData: Record<string, unknown> = {
+      subscriptionTier: tier,
+      updatedAt: new Date(),
+    };
+    
+    if (stripeData?.customerId) {
+      updateData.stripeCustomerId = stripeData.customerId;
+    }
+    if (stripeData?.subscriptionId) {
+      updateData.stripeSubscriptionId = stripeData.subscriptionId;
+    }
+    if (stripeData?.startsAt) {
+      updateData.subscriptionStartsAt = stripeData.startsAt;
+    }
+    if (stripeData?.endsAt) {
+      updateData.subscriptionEndsAt = stripeData.endsAt;
+    }
+    
+    if (existing) {
+      await db.update(userProfiles)
+        .set(updateData)
+        .where(eq(userProfiles.id, existing.id));
+    } else {
+      await db.insert(userProfiles).values({
+        userId,
+        senderName: "",
+        companyName: "",
+        subscriptionTier: tier,
+        ...stripeData?.customerId && { stripeCustomerId: stripeData.customerId },
+        ...stripeData?.subscriptionId && { stripeSubscriptionId: stripeData.subscriptionId },
+        ...stripeData?.startsAt && { subscriptionStartsAt: stripeData.startsAt },
+        ...stripeData?.endsAt && { subscriptionEndsAt: stripeData.endsAt },
+      });
+    }
   }
 
   // ============================================

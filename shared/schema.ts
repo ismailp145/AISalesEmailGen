@@ -1,13 +1,20 @@
 import { z } from "zod";
-import { pgTable, text, serial, timestamp, jsonb, varchar, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, jsonb, varchar, integer, boolean, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
+
+// ============================================
+// Enums
+// ============================================
+
+// Subscription tier enum for user billing
+export const subscriptionTierEnum = pgEnum("subscription_tier", ["free", "pro", "enterprise"]);
 
 // ============================================
 // Database Tables (Drizzle ORM)
 // ============================================
 
-// User profiles table - stores sender/company info
+// User profiles table - stores sender/company info and subscription data
 export const userProfiles = pgTable("user_profiles", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull().unique(), // Clerk user ID - unique to ensure one profile per user
@@ -27,6 +34,16 @@ export const userProfiles = pgTable("user_profiles", {
   differentiators: text("differentiators"),
   socialProof: text("social_proof"),
   commonObjections: text("common_objections"),
+  
+  // Subscription fields
+  subscriptionTier: subscriptionTierEnum("subscription_tier").notNull().default("free"),
+  emailsUsedThisMonth: integer("emails_used_this_month").notNull().default(0),
+  emailsUsedThisMonthResetAt: timestamp("emails_used_this_month_reset_at").defaultNow().notNull(),
+  subscriptionStartsAt: timestamp("subscription_starts_at"),
+  subscriptionEndsAt: timestamp("subscription_ends_at"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -146,6 +163,31 @@ export const scheduledEmails = pgTable("scheduled_emails", {
   error: text("error"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ============================================
+// Subscription Limits
+// ============================================
+
+export const SUBSCRIPTION_LIMITS = {
+  free: {
+    emailsPerMonth: 50,
+    bulkCampaigns: 1,
+    sequences: 1,
+  },
+  pro: {
+    emailsPerMonth: 1000,
+    bulkCampaigns: 10,
+    sequences: 10,
+  },
+  enterprise: {
+    emailsPerMonth: 10000,
+    bulkCampaigns: -1, // unlimited
+    sequences: -1, // unlimited
+  },
+} as const;
+
+export type SubscriptionTier = keyof typeof SUBSCRIPTION_LIMITS;
+export type SubscriptionLimits = typeof SUBSCRIPTION_LIMITS[SubscriptionTier];
 
 // Relations
 export const prospectsRelations = relations(prospects, ({ many }) => ({
@@ -272,6 +314,30 @@ export const defaultUserProfile: UserProfile = {
   differentiators: "",
   socialProof: "",
   commonObjections: "",
+};
+
+// User subscription info schema (for API responses)
+export const userSubscriptionSchema = z.object({
+  subscriptionTier: z.enum(["free", "pro", "enterprise"]).default("free"),
+  emailsUsedThisMonth: z.number().default(0),
+  emailsUsedThisMonthResetAt: z.date().optional(),
+  subscriptionStartsAt: z.date().nullable().optional(),
+  subscriptionEndsAt: z.date().nullable().optional(),
+  stripeCustomerId: z.string().nullable().optional(),
+  stripeSubscriptionId: z.string().nullable().optional(),
+});
+
+export type UserSubscription = z.infer<typeof userSubscriptionSchema>;
+
+// Default subscription for new users
+export const defaultUserSubscription: UserSubscription = {
+  subscriptionTier: "free",
+  emailsUsedThisMonth: 0,
+  emailsUsedThisMonthResetAt: undefined,
+  subscriptionStartsAt: null,
+  subscriptionEndsAt: null,
+  stripeCustomerId: null,
+  stripeSubscriptionId: null,
 };
 
 // Prospect schema for email generation
