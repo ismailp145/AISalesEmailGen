@@ -319,21 +319,65 @@ This is REAL data from their website. Use it to create specific, accurate trigge
 
   // Build recent news context
   let newsContext = "";
-  if (companyData?.recentNews && companyData.recentNews.length > 0) {
-    newsContext = `\n\nRECENT NEWS ABOUT ${prospect.company} (use these REAL news items as triggers):
-${companyData.recentNews.map((news, i) => 
+  const hasRealNews = companyData?.recentNews && companyData.recentNews.length > 0;
+  
+  if (hasRealNews && companyData.recentNews) {
+    const recentNews = companyData.recentNews;
+    newsContext = `\n\n=== REAL NEWS ARTICLES ABOUT ${prospect.company} ===
+CRITICAL: These are the ONLY real news articles available. You MUST create "news" type triggers ONLY from these actual articles. DO NOT invent, generate, or hallucinate additional news articles.
+
+${recentNews.map((news, i) => 
   `${i + 1}. ${news.title}
    ${news.description}
    Source: ${news.source} | Date: ${news.date}`
 ).join("\n\n")}
 
-These are REAL, recent news articles. Prioritize creating triggers from these actual news items.`;
+IMPORTANT RULES FOR NEWS TRIGGERS:
+- You may ONLY create "news" type triggers from the articles listed above
+- Match the title, description, source, and date from the real news items
+- DO NOT create any additional news triggers beyond what's listed above
+- If you need more triggers, use other types: LinkedIn, company events, industry trends, job changes, or funding`;
   }
 
   const hasRealData = websiteContext || newsContext;
-  const dataGuidance = hasRealData 
-    ? "IMPORTANT: You have access to REAL company data and news. Use this information to create SPECIFIC, ACCURATE triggers. Do NOT make up generic triggers when you have real data available."
-    : "Note: No real-time data available. Generate realistic, plausible triggers based on the company name, industry, and prospect's role.";
+  
+  // Build data guidance based on what's available
+  let dataGuidance = "";
+  if (hasRealNews) {
+    dataGuidance = `🚨 CRITICAL INSTRUCTIONS 🚨
+You have access to REAL news articles listed above. For "news" type triggers:
+- You MUST ONLY use the real news articles provided
+- DO NOT generate, invent, or hallucinate additional news articles
+- Match the exact title, description, source, and date from the real articles
+- If you need more triggers beyond the real news, use website data, LinkedIn activity, industry trends, job changes, or funding - but NEVER create fake news`;
+  } else if (hasRealData) {
+    dataGuidance = "IMPORTANT: You have access to REAL company data. Use this information to create SPECIFIC, ACCURATE triggers. Do NOT make up generic triggers when you have real data available.";
+  } else {
+    dataGuidance = "Note: No real-time data available. Generate realistic, plausible triggers based on the company name, industry, and prospect's role.";
+  }
+
+  // Build trigger generation instructions
+  const triggerInstructions = hasRealNews
+    ? `Generate triggers based on the REAL news articles provided above. For each real news item, create a corresponding "news" type trigger with matching title, description, source, and date. You may also create additional triggers from website data, LinkedIn activity, industry trends, job changes, or funding - but DO NOT create any additional fake news articles.`
+    : `Generate 4-6 potential triggers. For each trigger, consider:`;
+
+  const triggerTypes = hasRealNews
+    ? `1. NEWS - ONLY use the real news articles listed above (${companyData.recentNews!.length} articles available). DO NOT create additional news triggers.
+2. LINKEDIN - Posts, articles, profile updates, job changes
+3. COMPANY_EVENT - Conferences, webinars, awards, partnerships
+4. INDUSTRY_TREND - Market shifts, new regulations, emerging technologies
+5. JOB_CHANGE - Promotions, new roles, team expansions
+6. FUNDING - Investment rounds, acquisitions, financial milestones`
+    : `1. NEWS - Company announcements, press releases, product launches, expansions
+2. LINKEDIN - Posts, articles, profile updates, job changes
+3. COMPANY_EVENT - Conferences, webinars, awards, partnerships
+4. INDUSTRY_TREND - Market shifts, new regulations, emerging technologies
+5. JOB_CHANGE - Promotions, new roles, team expansions
+6. FUNDING - Investment rounds, acquisitions, financial milestones`;
+
+  const finalWarning = hasRealNews
+    ? `\n\n🚨 FINAL WARNING: For "news" type triggers, you MUST ONLY use the real news articles provided above. Match their exact titles, descriptions, sources, and dates. DO NOT create, generate, or hallucinate any additional news articles. If you need more triggers, use other trigger types.`
+    : "";
 
   return `You are an expert sales researcher. Your job is to identify potential "triggers" - recent events or activities that could be used as personalized conversation starters in a cold email.
 
@@ -344,30 +388,26 @@ Name: ${prospect.firstName} ${prospect.lastName}
 Title: ${prospect.title}
 Company: ${prospect.company}${linkedinContext}${notesContext}${websiteContext}${newsContext}
 
-Generate 4-6 potential triggers. For each trigger, consider:
-1. NEWS - Company announcements, press releases, product launches, expansions
-2. LINKEDIN - Posts, articles, profile updates, job changes
-3. COMPANY_EVENT - Conferences, webinars, awards, partnerships
-4. INDUSTRY_TREND - Market shifts, new regulations, emerging technologies
-5. JOB_CHANGE - Promotions, new roles, team expansions
-6. FUNDING - Investment rounds, acquisitions, financial milestones
+${triggerInstructions}
+
+${triggerTypes}
 
 Return a JSON object with:
 {
   "triggers": [
     {
       "type": "news" | "linkedin" | "company_event" | "industry_trend" | "job_change" | "funding",
-      "title": "Short, compelling title for the trigger",
-      "description": "2-3 sentence description of the trigger and why it's relevant",
+      "title": "Short, compelling title for the trigger${hasRealNews ? " (for news type, use the exact title from the real article)" : ""}",
+      "description": "2-3 sentence description of the trigger and why it's relevant${hasRealNews ? " (for news type, use the exact description from the real article)" : ""}",
       "relevance": "high" | "medium" | "low",
-      "source": "Where this might have been found (e.g., 'Company Blog', 'LinkedIn', 'TechCrunch', 'Press Release')",
-      "date": "Approximate date (e.g., 'This week', 'November 2024', 'Recently')"
+      "source": "Where this might have been found${hasRealNews ? " (for news type, use the exact source from the real article)" : " (e.g., 'Company Blog', 'LinkedIn', 'TechCrunch', 'Press Release')"}",
+      "date": "Approximate date${hasRealNews ? " (for news type, use the exact date from the real article)" : " (e.g., 'This week', 'November 2024', 'Recently')"}"
     }
   ],
   "prospectSummary": "Brief 2-3 sentence summary of who this prospect is and key insights about their role/company"
 }
 
-Make the triggers feel authentic and specific to this person/company. ${hasRealData ? "Base triggers on the REAL data provided above." : "Avoid generic triggers."}
+Make the triggers feel authentic and specific to this person/company. ${hasRealData ? "Base triggers on the REAL data provided above." : "Avoid generic triggers."}${finalWarning}
 Prioritize triggers with higher relevance that would make great email openers.`;
 }
 

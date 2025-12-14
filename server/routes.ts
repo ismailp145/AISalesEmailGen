@@ -331,19 +331,24 @@ export async function registerRoutes(
             companyWebsite || undefined
           );
 
+          // FIX: Only include recentNews if there are actual news items
           companyData = {
             websiteInfo: research.websiteData?.content,
-            recentNews: research.newsData.newsItems.map(news => ({
-              title: news.title,
-              description: news.description,
-              source: news.source || "Unknown",
-              date: news.publishedDate || "Recent",
-            })),
+            // Only include recentNews if we actually found news
+            ...(research.newsData.newsItems.length > 0 && {
+              recentNews: research.newsData.newsItems.map(news => ({
+                title: news.title,
+                description: news.description,
+                source: news.source || "Unknown",
+                date: news.publishedDate || "Recent",
+              })),
+            }),
           };
 
           console.log("[API] Company research completed:", {
             hasWebsiteData: !!research.websiteData,
             newsCount: research.newsData.newsItems.length,
+            firecrawlSearched: true, // Track that we attempted Firecrawl
           });
         } catch (firecrawlError: any) {
           // Log error but continue with trigger detection without company data
