@@ -74,8 +74,7 @@ async function processEmail(scheduledEmail: ScheduledEmailRecord): Promise<void>
   }
 
   // Get prospect for recipient email
-  const prospects = await storage.getAllProspects();
-  const prospect = prospects.find(p => p.id === scheduledEmail.prospectId);
+  const prospect = await storage.getProspectById(scheduledEmail.prospectId);
   
   if (!prospect) {
     await storage.updateScheduledEmailStatus(scheduledEmail.id, "failed", "Prospect not found");
@@ -112,9 +111,8 @@ async function processEmail(scheduledEmail: ScheduledEmailRecord): Promise<void>
 }
 
 async function scheduleNextStep(enrollmentId: number, currentStepId: number): Promise<void> {
-  // Get enrollment
-  const enrollments = await storage.getEnrollments(0); // Get all enrollments
-  const enrollment = enrollments.find(e => e.id === enrollmentId);
+  // Get enrollment by ID
+  const enrollment = await storage.getEnrollmentById(enrollmentId);
   
   if (!enrollment || enrollment.status !== "active") {
     return;
@@ -165,8 +163,7 @@ async function scheduleStepEmail(
   if (!sequence) return;
 
   // Get prospect for email generation
-  const prospects = await storage.getAllProspects();
-  const prospectRecord = prospects.find(p => p.id === prospectId);
+  const prospectRecord = await storage.getProspectById(prospectId);
   
   if (!prospectRecord) {
     console.error(`[Scheduler] Prospect ${prospectId} not found`);

@@ -90,6 +90,7 @@ export interface IStorage {
   saveProspects(prospects: InsertProspect[]): Promise<ProspectRecord[]>;
   getProspectsByCrmSource(source: CrmProvider): Promise<ProspectRecord[]>;
   getAllProspects(): Promise<ProspectRecord[]>;
+  getProspectById(id: number): Promise<ProspectRecord | null>;
   
   // Email activity operations
   saveEmailActivity(data: SaveEmailActivityInput): Promise<EmailActivityRecord>;
@@ -114,6 +115,7 @@ export interface IStorage {
   // Enrollment operations
   enrollProspects(sequenceId: number, prospectIds: number[]): Promise<SequenceEnrollmentRecord[]>;
   getEnrollments(sequenceId: number): Promise<EnrollmentWithProspect[]>;
+  getEnrollmentById(id: number): Promise<SequenceEnrollmentRecord | null>;
   getEnrollmentsByProspect(prospectId: number): Promise<SequenceEnrollmentRecord[]>;
   updateEnrollmentStatus(enrollmentId: number, status: EnrollmentStatus): Promise<SequenceEnrollmentRecord | null>;
   markAsReplied(enrollmentId: number): Promise<void>;
@@ -385,6 +387,15 @@ export class DatabaseStorage implements IStorage {
     return db.select()
       .from(prospects)
       .orderBy(desc(prospects.createdAt));
+  }
+
+  async getProspectById(id: number): Promise<ProspectRecord | null> {
+    const [result] = await db.select()
+      .from(prospects)
+      .where(eq(prospects.id, id))
+      .limit(1);
+    
+    return result || null;
   }
 
   // ============================================
@@ -693,6 +704,15 @@ export class DatabaseStorage implements IStorage {
     }
 
     return result;
+  }
+
+  async getEnrollmentById(id: number): Promise<SequenceEnrollmentRecord | null> {
+    const [result] = await db.select()
+      .from(sequenceEnrollments)
+      .where(eq(sequenceEnrollments.id, id))
+      .limit(1);
+    
+    return result || null;
   }
 
   async getEnrollmentsByProspect(prospectId: number): Promise<SequenceEnrollmentRecord[]> {
