@@ -8,6 +8,14 @@ import { GmailService, createGmailService, isGmailConfigured } from "./gmail";
 import { OutlookService, createOutlookService, isOutlookConfigured } from "./outlook";
 import { storage } from "./storage";
 import { isFirecrawlConfigured, researchCompany, crawlCompanyWebsite } from "./firecrawl";
+import {
+  isStripeConfigured,
+  getStripeConfigStatus,
+  createCheckoutSession,
+  createPortalSession,
+  constructWebhookEvent,
+  handleWebhookEvent,
+} from "./stripe";
 import { getCurrentUserId } from "./middleware/clerk";
 import { normalizeUrl } from "./url-utils";
 import { 
@@ -175,6 +183,7 @@ export async function registerRoutes(
       salesforce: isSalesforceConfigured() ? "configured" : "not configured",
       gmail: isGmailConfigured() ? "configured" : "not configured",
       outlook: isOutlookConfigured() ? "configured" : "not configured",
+      stripe: isStripeConfigured() ? "configured" : "not configured",
     });
   });
 
@@ -1865,6 +1874,192 @@ export async function registerRoutes(
       return res.status(500).json({
         error: "Failed to get scheduled emails",
         message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // ============================================
+  // Stripe Subscription Endpoints
+  // ============================================
+
+  // Get subscription status
+  app.get("/api/subscription", async (req, res) => {
+    try {
+      const userId = getUserIdOrDefault(req);
+      const subscription = await storage.getSubscriptionInfo(userId);
+      const limits = await storage.checkEmailLimit(userId);
+      
+      return res.json({
+        ...subscription,
+        limits: {
+          emailsUsed: limits.used,
+          emailsLimit: limits.limit,
+          tier: limits.tier,
+        },
+      });
+    } catch (error: any) {
+      console.error("Get subscription error:", error);
+      return res.status(500).json({
+        error: "Failed to get subscription",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Create Stripe Checkout session for Pro subscription
+  app.post("/api/stripe/create-checkout-session", async (req, res) => {
+    try {
+      const configStatus = getStripeConfigStatus();
+      
+      if (!isStripeConfigured()) {
+        const missingKeys: string[] = [];
+        if (!configStatus.hasSecretKey) missingKeys.push("STRIPE_SECRET_KEY");
+        if (!configStatus.hasPriceId) missingKeys.push("STRIPE_PRO_PRICE_ID");
+        
+        return res.status(503).json({
+          error: "Stripe not configured",
+          message: `Stripe is not configured. Missing: ${missingKeys.join(", ")}`,
+        });
+      }
+
+      const userId = getUserIdOrDefault(req);
+      const subscription = await storage.getSubscriptionInfo(userId);
+
+      // Get user email from Clerk or use a fallback
+      let userEmail = req.body.email;
+      if (!userEmail) {
+        // Try to get from user profile
+        const profile = await storage.getUserProfile(userId);
+        userEmail = profile.senderEmail || `${userId}@placeholder.email`;
+      }
+
+      const baseUrl = getBaseUrl(req);
+      const successUrl = `${baseUrl}/settings?subscription=success`;
+      const cancelUrl = `${baseUrl}/settings?subscription=cancelled`;
+
+      console.log("[Stripe] Creating checkout session:", { userId, userEmail, baseUrl });
+
+      const result = await createCheckoutSession({
+        userId,
+        userEmail,
+        customerId: subscription.stripeCustomerId,
+        successUrl,
+        cancelUrl,
+      });
+
+      console.log("[Stripe] Checkout session created:", { url: result.url ? "present" : "missing", customerId: result.customerId });
+
+      // Save the customer ID if it's new
+      if (result.customerId && result.customerId !== subscription.stripeCustomerId) {
+        await storage.updateSubscriptionTier(userId, subscription.subscriptionTier as any, {
+          customerId: result.customerId,
+        });
+      }
+
+      return res.json({ url: result.url });
+    } catch (error: any) {
+      console.error("Create checkout session error:", error);
+      return res.status(500).json({
+        error: "Failed to create checkout session",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Create Stripe Customer Portal session for subscription management
+  app.post("/api/stripe/create-portal-session", async (req, res) => {
+    try {
+      if (!isStripeConfigured()) {
+        return res.status(503).json({
+          error: "Stripe not configured",
+          message: "Stripe is not configured.",
+        });
+      }
+
+      const userId = getUserIdOrDefault(req);
+      const subscription = await storage.getSubscriptionInfo(userId);
+      
+      if (!subscription.stripeCustomerId) {
+        return res.status(400).json({
+          error: "No subscription found",
+          message: "You don't have an active subscription to manage.",
+        });
+      }
+
+      const baseUrl = getBaseUrl(req);
+      const returnUrl = `${baseUrl}/settings`;
+
+      const url = await createPortalSession({
+        customerId: subscription.stripeCustomerId,
+        returnUrl,
+      });
+
+      return res.json({ url });
+    } catch (error: any) {
+      console.error("Create portal session error:", error);
+      return res.status(500).json({
+        error: "Failed to create portal session",
+        message: error?.message || "An unexpected error occurred.",
+      });
+    }
+  });
+
+  // Stripe webhook endpoint
+  // Note: This endpoint needs raw body parsing, which should be configured in index.ts
+  app.post("/api/stripe/webhook", async (req, res) => {
+    try {
+      const signature = req.headers["stripe-signature"] as string;
+      
+      if (!signature) {
+        return res.status(400).json({ error: "Missing stripe-signature header" });
+      }
+
+      // Get raw body - Express should be configured to provide this
+      const rawBody = (req as any).rawBody;
+      if (!rawBody) {
+        console.error("Stripe webhook: rawBody not available. Make sure raw body parsing is configured.");
+        return res.status(400).json({ error: "Raw body not available" });
+      }
+
+      const event = constructWebhookEvent(rawBody, signature);
+      const result = await handleWebhookEvent(event);
+
+      console.log(`[Stripe Webhook] Event: ${event.type}, Action: ${result.action}`);
+
+      if (result.action !== "ignored" && result.userId) {
+        switch (result.action) {
+          case "subscription_created":
+          case "subscription_updated":
+            await storage.updateSubscriptionTier(result.userId, result.tier || "pro", {
+              customerId: result.customerId,
+              subscriptionId: result.subscriptionId,
+              startsAt: new Date(),
+              endsAt: result.currentPeriodEnd,
+            });
+            console.log(`[Stripe Webhook] Updated subscription for user ${result.userId} to ${result.tier}`);
+            break;
+            
+          case "subscription_deleted":
+            await storage.updateSubscriptionTier(result.userId, "free", {
+              customerId: result.customerId,
+              subscriptionId: undefined,
+            });
+            console.log(`[Stripe Webhook] Cancelled subscription for user ${result.userId}`);
+            break;
+            
+          case "payment_failed":
+            console.log(`[Stripe Webhook] Payment failed for user ${result.userId}`);
+            // Optionally: Send notification, downgrade after grace period, etc.
+            break;
+        }
+      }
+
+      return res.json({ received: true });
+    } catch (error: any) {
+      console.error("Stripe webhook error:", error);
+      return res.status(400).json({
+        error: "Webhook error",
+        message: error?.message || "Failed to process webhook",
       });
     }
   });

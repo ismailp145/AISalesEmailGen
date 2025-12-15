@@ -1,6 +1,7 @@
 "use client";
 
-import { Link } from "wouter";
+import { useState } from "react";
+import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,8 @@ import {
   Linkedin,
   FileSpreadsheet,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 // Feature data
 const features = [
@@ -128,6 +131,58 @@ const pricingTiers = [
 ];
 
 export default function LandingPage() {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+
+  const handlePricingClick = async (tierName: string) => {
+    if (tierName === "Starter") {
+      // Free tier - navigate to sign up
+      navigate("/sign-up");
+      return;
+    }
+
+    if (tierName === "Enterprise") {
+      // Enterprise - scroll to contact form
+      document.querySelector("#contact")?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+
+    if (tierName === "Pro") {
+      // Pro tier - create checkout session
+      setIsCheckoutLoading(true);
+      try {
+        const response = await apiRequest("POST", "/api/stripe/create-checkout-session");
+        
+        if (!response.ok) {
+          const error = await response.json();
+          // If not authenticated, redirect to sign up
+          if (response.status === 401) {
+            navigate("/sign-up");
+            return;
+          }
+          throw new Error(error.message || "Failed to start checkout");
+        }
+
+        const { url } = await response.json();
+        
+        if (url && url.startsWith("https://")) {
+          window.location.href = url;
+        } else {
+          throw new Error("Invalid checkout URL. Please check Stripe configuration.");
+        }
+      } catch (error: any) {
+        toast({
+          title: "Checkout Error",
+          description: error?.message || "Could not start checkout. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsCheckoutLoading(false);
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <LandingHeader />
@@ -484,7 +539,8 @@ export default function LandingPage() {
                 description={tier.description}
                 features={tier.features}
                 highlighted={tier.highlighted}
-                ctaText={tier.ctaText}
+                ctaText={tier.name === "Pro" && isCheckoutLoading ? "Loading..." : tier.ctaText}
+                onCtaClick={() => handlePricingClick(tier.name)}
                 index={index}
               />
             ))}

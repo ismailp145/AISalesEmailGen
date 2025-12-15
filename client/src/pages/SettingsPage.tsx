@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Loader2, Save, User, Building2, Package, Target, Sparkles } from "lucide-react";
+import { useSearch } from "wouter";
+import { Loader2, Save, User, Building2, Package, Target, Sparkles, CreditCard, Crown, Check, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import {
   Form,
   FormControl,
@@ -18,15 +21,56 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { userProfileSchema, type UserProfile, defaultUserProfile } from "@shared/schema";
+import { userProfileSchema, type UserProfile, defaultUserProfile, SUBSCRIPTION_LIMITS } from "@shared/schema";
+
+// Subscription info type
+interface SubscriptionInfo {
+  subscriptionTier: "free" | "pro" | "enterprise";
+  emailsUsedThisMonth: number;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  limits: {
+    emailsUsed: number;
+    emailsLimit: number;
+    tier: "free" | "pro" | "enterprise";
+  };
+}
 
 export default function SettingsPage() {
   const { toast } = useToast();
+  const searchString = useSearch();
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
 
   const { data: profile, isLoading } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
   });
+
+  const { data: subscription, isLoading: isSubscriptionLoading } = useQuery<SubscriptionInfo>({
+    queryKey: ["/api/subscription"],
+  });
+
+  // Handle subscription success/cancel URL parameters
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const subscriptionStatus = params.get("subscription");
+    
+    if (subscriptionStatus === "success") {
+      toast({
+        title: "Subscription Activated!",
+        description: "Welcome to Pro! Your subscription is now active.",
+      });
+      // Clean up URL
+      window.history.replaceState({}, "", "/settings");
+      // Refresh subscription data
+      queryClient.invalidateQueries({ queryKey: ["/api/subscription"] });
+    } else if (subscriptionStatus === "cancelled") {
+      toast({
+        title: "Checkout Cancelled",
+        description: "You can upgrade anytime from this page.",
+      });
+      window.history.replaceState({}, "", "/settings");
+    }
+  }, [searchString, toast]);
 
   const form = useForm<UserProfile>({
     resolver: zodResolver(userProfileSchema),
@@ -113,8 +157,70 @@ export default function SettingsPage() {
     },
   });
 
+  // Stripe checkout mutation
+  const checkoutMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/stripe/create-checkout-session");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create checkout session");
+      }
+      return response.json();
+    },
+    onSuccess: (data: { url: string }) => {
+      if (data.url && data.url.startsWith("https://")) {
+        window.location.href = data.url;
+      } else {
+        toast({
+          title: "Checkout Error",
+          description: "Invalid checkout URL received. Please check your Stripe configuration.",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Checkout Error",
+        description: error?.message || "Could not start checkout. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Stripe portal mutation
+  const portalMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/stripe/create-portal-session");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to open billing portal");
+      }
+      return response.json();
+    },
+    onSuccess: (data: { url: string }) => {
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Portal Error",
+        description: error?.message || "Could not open billing portal. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleAutoFill = () => {
     autoFillMutation.mutate();
+  };
+
+  const handleUpgrade = () => {
+    checkoutMutation.mutate();
+  };
+
+  const handleManageSubscription = () => {
+    portalMutation.mutate();
   };
 
   const onSubmit = (data: UserProfile) => {
@@ -130,10 +236,137 @@ export default function SettingsPage() {
     );
   }
 
+  // Calculate usage percentage
+  const emailsUsed = subscription?.limits?.emailsUsed || 0;
+  const emailsLimit = subscription?.limits?.emailsLimit || 50;
+  const usagePercentage = Math.min((emailsUsed / emailsLimit) * 100, 100);
+  const tier = subscription?.subscriptionTier || "free";
+  const isPro = tier === "pro";
+  const isEnterprise = tier === "enterprise";
+  const hasStripeSubscription = !!subscription?.stripeSubscriptionId;
+
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div>
-        <h1 className="text-xl font-medium tracking-tight">My Profile</h1>
+        <h1 className="text-xl font-medium tracking-tight">Settings</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage your subscription and profile settings
+        </p>
+      </div>
+
+      {/* Billing Section */}
+      <Card className="border-border/50">
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-base font-medium">Subscription & Billing</CardTitle>
+            </div>
+            <Badge 
+              variant={isPro || isEnterprise ? "default" : "secondary"}
+              className="flex items-center gap-1"
+            >
+              {(isPro || isEnterprise) && <Crown className="w-3 h-3" />}
+              {tier.charAt(0).toUpperCase() + tier.slice(1)}
+            </Badge>
+          </div>
+          <CardDescription className="text-xs">
+            Manage your subscription plan and billing
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isSubscriptionLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <>
+              {/* Usage Progress */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Emails this month</span>
+                  <span className="font-medium">
+                    {emailsUsed} / {emailsLimit === -1 ? "Unlimited" : emailsLimit}
+                  </span>
+                </div>
+                {emailsLimit !== -1 && (
+                  <Progress value={usagePercentage} className="h-2" />
+                )}
+              </div>
+
+              {/* Plan Details */}
+              <div className="rounded-lg border border-border/50 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium">
+                      {tier === "free" && "Free Plan"}
+                      {tier === "pro" && "Pro Plan"}
+                      {tier === "enterprise" && "Enterprise Plan"}
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
+                      {tier === "free" && "50 emails/month, basic features"}
+                      {tier === "pro" && "$49/month • 1,000 emails/month, all features"}
+                      {tier === "enterprise" && "Custom pricing • Unlimited emails"}
+                    </p>
+                  </div>
+                </div>
+
+                {tier === "free" && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      Upgrade to Pro for bulk campaigns, sequences, and more.
+                    </p>
+                    <ul className="text-sm space-y-1">
+                      {["1,000 emails/month", "Bulk CSV campaigns", "Email sequences", "Priority support"].map((feature) => (
+                        <li key={feature} className="flex items-center gap-2 text-muted-foreground">
+                          <Check className="w-3 h-3 text-primary" />
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                {tier === "free" ? (
+                  <Button 
+                    onClick={handleUpgrade}
+                    disabled={checkoutMutation.isPending}
+                    className="gap-2"
+                  >
+                    {checkoutMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Crown className="w-4 h-4" />
+                    )}
+                    Upgrade to Pro
+                  </Button>
+                ) : hasStripeSubscription ? (
+                  <Button 
+                    variant="outline"
+                    onClick={handleManageSubscription}
+                    disabled={portalMutation.isPending}
+                    className="gap-2"
+                  >
+                    {portalMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ExternalLink className="w-4 h-4" />
+                    )}
+                    Manage Subscription
+                  </Button>
+                ) : null}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Profile Section Header */}
+      <div>
+        <h2 className="text-lg font-medium tracking-tight">Profile</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Tell us about yourself and your company so the AI can write better emails
         </p>

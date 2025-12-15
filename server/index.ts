@@ -34,6 +34,7 @@ const PUBLIC_ROUTES = [
   "/api/crm/salesforce/callback",
   "/api/email/gmail/callback",
   "/api/email/outlook/callback",
+  "/api/stripe/webhook",
 ];
 
 // Apply Clerk auth middleware globally (if configured)
