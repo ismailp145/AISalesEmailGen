@@ -44,6 +44,10 @@ export const userProfiles = pgTable("user_profiles", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   
+  // Free trial fields
+  freeTrialStartedAt: timestamp("free_trial_started_at"),
+  freeTrialEndsAt: timestamp("free_trial_ends_at"),
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -325,9 +329,23 @@ export const userSubscriptionSchema = z.object({
   subscriptionEndsAt: z.date().nullable().optional(),
   stripeCustomerId: z.string().nullable().optional(),
   stripeSubscriptionId: z.string().nullable().optional(),
+  freeTrialStartedAt: z.date().nullable().optional(),
+  freeTrialEndsAt: z.date().nullable().optional(),
 });
 
 export type UserSubscription = z.infer<typeof userSubscriptionSchema>;
+
+// Free trial status interface
+export interface FreeTrialStatus {
+  isActive: boolean;
+  startedAt: Date | null;
+  endsAt: Date | null;
+  daysRemaining: number;
+  hasExpired: boolean;
+}
+
+// Default free trial duration in days
+export const FREE_TRIAL_DAYS = 14;
 
 // Default subscription for new users
 export const defaultUserSubscription: UserSubscription = {
@@ -338,6 +356,8 @@ export const defaultUserSubscription: UserSubscription = {
   subscriptionEndsAt: null,
   stripeCustomerId: null,
   stripeSubscriptionId: null,
+  freeTrialStartedAt: null,
+  freeTrialEndsAt: null,
 };
 
 // Prospect schema for email generation

@@ -11,9 +11,11 @@ import {
   sequenceEnrollments,
   scheduledEmails,
   SUBSCRIPTION_LIMITS,
+  FREE_TRIAL_DAYS,
   type UserProfile,
   type UserSubscription,
   type SubscriptionTier,
+  type FreeTrialStatus,
   type Prospect,
   type ProspectWithStatus,
   type GeneratedEmail,
@@ -71,6 +73,10 @@ export interface IStorage {
   checkEmailLimit(userId: string): Promise<{ allowed: boolean; used: number; limit: number; tier: SubscriptionTier }>;
   resetMonthlyUsage(userId: string): Promise<void>;
   updateSubscriptionTier(userId: string, tier: SubscriptionTier, stripeData?: { customerId?: string; subscriptionId?: string; startsAt?: Date; endsAt?: Date }): Promise<void>;
+  
+  // Free trial operations
+  checkFreeTrialStatus(userId: string): Promise<FreeTrialStatus>;
+  startFreeTrial(userId: string): Promise<FreeTrialStatus>;
   
   // Campaign/Prospect operations (in-memory for bulk campaigns)
   createCampaign(prospects: Prospect[]): Promise<ProspectWithStatus[]>;
@@ -239,6 +245,8 @@ export class DatabaseStorage implements IStorage {
       subscriptionEndsAt: profile.subscriptionEndsAt,
       stripeCustomerId: profile.stripeCustomerId,
       stripeSubscriptionId: profile.stripeSubscriptionId,
+      freeTrialStartedAt: profile.freeTrialStartedAt,
+      freeTrialEndsAt: profile.freeTrialEndsAt,
     };
   }
 
@@ -360,6 +368,105 @@ export class DatabaseStorage implements IStorage {
         ...stripeData?.endsAt && { subscriptionEndsAt: stripeData.endsAt },
       });
     }
+  }
+
+  // ============================================
+  // Free Trial Operations
+  // ============================================
+
+  async checkFreeTrialStatus(userId: string): Promise<FreeTrialStatus> {
+    const [profile] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    const defaultStatus: FreeTrialStatus = {
+      isActive: false,
+      startedAt: null,
+      endsAt: null,
+      daysRemaining: 0,
+      hasExpired: false,
+    };
+    
+    if (!profile) {
+      return defaultStatus;
+    }
+    
+    // If user has a paid subscription, free trial doesn't apply
+    if (profile.subscriptionTier !== "free") {
+      return {
+        isActive: false,
+        startedAt: profile.freeTrialStartedAt,
+        endsAt: profile.freeTrialEndsAt,
+        daysRemaining: 0,
+        hasExpired: !!profile.freeTrialEndsAt,
+      };
+    }
+    
+    // Check if trial exists and is active
+    if (!profile.freeTrialStartedAt || !profile.freeTrialEndsAt) {
+      return defaultStatus;
+    }
+    
+    const now = new Date();
+    const endsAt = new Date(profile.freeTrialEndsAt);
+    const isActive = now < endsAt;
+    const hasExpired = now >= endsAt;
+    
+    // Calculate days remaining
+    const msRemaining = endsAt.getTime() - now.getTime();
+    const daysRemaining = isActive ? Math.ceil(msRemaining / (1000 * 60 * 60 * 24)) : 0;
+    
+    return {
+      isActive,
+      startedAt: profile.freeTrialStartedAt,
+      endsAt: profile.freeTrialEndsAt,
+      daysRemaining,
+      hasExpired,
+    };
+  }
+
+  async startFreeTrial(userId: string): Promise<FreeTrialStatus> {
+    const now = new Date();
+    const endsAt = new Date(now);
+    endsAt.setDate(endsAt.getDate() + FREE_TRIAL_DAYS);
+    
+    const [existing] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    if (existing) {
+      // Only start trial if user hasn't had one before
+      if (existing.freeTrialStartedAt) {
+        return this.checkFreeTrialStatus(userId);
+      }
+      
+      await db.update(userProfiles)
+        .set({
+          freeTrialStartedAt: now,
+          freeTrialEndsAt: endsAt,
+          updatedAt: now,
+        })
+        .where(eq(userProfiles.id, existing.id));
+    } else {
+      // Create new profile with free trial
+      await db.insert(userProfiles).values({
+        userId,
+        senderName: "",
+        companyName: "",
+        freeTrialStartedAt: now,
+        freeTrialEndsAt: endsAt,
+      });
+    }
+    
+    return {
+      isActive: true,
+      startedAt: now,
+      endsAt,
+      daysRemaining: FREE_TRIAL_DAYS,
+      hasExpired: false,
+    };
   }
 
   // ============================================

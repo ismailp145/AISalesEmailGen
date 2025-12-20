@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useSearch } from "wouter";
-import { Loader2, Save, User, Building2, Package, Target, Sparkles, CreditCard, Crown, Check, ExternalLink } from "lucide-react";
+import { Loader2, Save, User, Building2, Package, Target, Sparkles, CreditCard, Crown, Check, ExternalLink, Clock, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,12 @@ interface SubscriptionInfo {
     emailsUsed: number;
     emailsLimit: number;
     tier: "free" | "pro" | "enterprise";
+  };
+  freeTrial?: {
+    isActive: boolean;
+    daysRemaining: number;
+    hasExpired: boolean;
+    endsAt: string | null;
   };
 }
 
@@ -244,6 +250,9 @@ export default function SettingsPage() {
   const isPro = tier === "pro";
   const isEnterprise = tier === "enterprise";
   const hasStripeSubscription = !!subscription?.stripeSubscriptionId;
+  const isTrialUser = subscription?.freeTrial?.isActive ?? false;
+  const trialDaysRemaining = subscription?.freeTrial?.daysRemaining ?? 0;
+  const trialHasExpired = subscription?.freeTrial?.hasExpired ?? false;
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -262,13 +271,27 @@ export default function SettingsPage() {
               <CreditCard className="w-4 h-4 text-muted-foreground" />
               <CardTitle className="text-base font-medium">Subscription & Billing</CardTitle>
             </div>
-            <Badge 
-              variant={isPro || isEnterprise ? "default" : "secondary"}
-              className="flex items-center gap-1"
-            >
-              {(isPro || isEnterprise) && <Crown className="w-3 h-3" />}
-              {tier.charAt(0).toUpperCase() + tier.slice(1)}
-            </Badge>
+            <div className="flex items-center gap-2">
+              {isTrialUser && (
+                <Badge variant="outline" className="flex items-center gap-1 text-xs">
+                  <Clock className="w-3 h-3" />
+                  Trial: {trialDaysRemaining} days left
+                </Badge>
+              )}
+              {trialHasExpired && !isPro && !isEnterprise && (
+                <Badge variant="secondary" className="flex items-center gap-1 text-xs text-yellow-600">
+                  <AlertTriangle className="w-3 h-3" />
+                  Trial Expired
+                </Badge>
+              )}
+              <Badge 
+                variant={isPro || isEnterprise ? "default" : "secondary"}
+                className="flex items-center gap-1"
+              >
+                {(isPro || isEnterprise) && <Crown className="w-3 h-3" />}
+                {isTrialUser && tier === "free" ? "Pro Trial" : tier.charAt(0).toUpperCase() + tier.slice(1)}
+              </Badge>
+            </div>
           </div>
           <CardDescription className="text-xs">
             Manage your subscription plan and billing
@@ -311,10 +334,29 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {tier === "free" && (
+                {tier === "free" && !isTrialUser && (
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground">
-                      Upgrade to Pro for bulk campaigns, sequences, and more.
+                      {trialHasExpired 
+                        ? "Your free trial has ended. Upgrade to Pro to continue using premium features."
+                        : "Upgrade to Pro for bulk campaigns, sequences, and more."}
+                    </p>
+                    <ul className="text-sm space-y-1">
+                      {["1,000 emails/month", "Bulk CSV campaigns", "Email sequences", "Priority support"].map((feature) => (
+                        <li key={feature} className="flex items-center gap-2 text-muted-foreground">
+                          <Check className="w-3 h-3 text-primary" />
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                {isTrialUser && tier === "free" && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      You're currently enjoying Pro features during your free trial. 
+                      Subscribe now to continue after your trial ends.
                     </p>
                     <ul className="text-sm space-y-1">
                       {["1,000 emails/month", "Bulk CSV campaigns", "Email sequences", "Priority support"].map((feature) => (
@@ -330,7 +372,7 @@ export default function SettingsPage() {
 
               {/* Action Buttons */}
               <div className="flex gap-3">
-                {tier === "free" ? (
+                {(tier === "free" || isTrialUser) && !hasStripeSubscription ? (
                   <Button 
                     onClick={handleUpgrade}
                     disabled={checkoutMutation.isPending}
@@ -341,7 +383,7 @@ export default function SettingsPage() {
                     ) : (
                       <Crown className="w-4 h-4" />
                     )}
-                    Upgrade to Pro
+                    {isTrialUser ? "Subscribe Now" : "Upgrade to Pro"}
                   </Button>
                 ) : hasStripeSubscription ? (
                   <Button 

@@ -1,8 +1,11 @@
 import { useState, useCallback } from "react";
-import { Sparkles, Send, Loader2, Download } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { Sparkles, Send, Loader2, Download, AlertTriangle, Crown, Clock } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -15,7 +18,26 @@ import { FileDropzone } from "@/components/FileDropzone";
 import { ProspectTable, type Prospect } from "@/components/ProspectTable";
 import { EmailPreviewModal } from "@/components/EmailPreviewModal";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+
+// Subscription info type
+interface SubscriptionInfo {
+  subscriptionTier: "free" | "pro" | "enterprise";
+  emailsUsedThisMonth: number;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  limits: {
+    emailsUsed: number;
+    emailsLimit: number;
+    tier: "free" | "pro" | "enterprise";
+  };
+  freeTrial?: {
+    isActive: boolean;
+    daysRemaining: number;
+    hasExpired: boolean;
+    endsAt: string | null;
+  };
+}
 
 function parseCSV(content: string): Omit<Prospect, "id" | "status">[] {
   const lines = content.trim().split("\n");
@@ -66,6 +88,11 @@ export default function BulkCampaignsPage() {
   const [tone, setTone] = useState<Tone>("professional");
   const [length, setLength] = useState<Length>("medium");
   const { toast } = useToast();
+  
+  // Fetch subscription info
+  const { data: subscription } = useQuery<SubscriptionInfo>({
+    queryKey: ["/api/subscription"],
+  });
 
   const handleFileSelect = useCallback(async (file: File) => {
     const content = await file.text();
@@ -133,6 +160,8 @@ export default function BulkCampaignsPage() {
       });
       
       const successCount = results.filter(r => r.email).length;
+      // Refresh subscription data to update usage counts
+      queryClient.invalidateQueries({ queryKey: ["/api/subscription"] });
       toast({
         title: "Complete",
         description: `Generated ${successCount} of ${results.length} emails.`,
@@ -142,8 +171,10 @@ export default function BulkCampaignsPage() {
       setProspects(prev => prev.map(p => 
         p.status === "generating" ? { ...p, status: "error" as const } : p
       ));
+      // Check if it's a limit/credits error
+      const isLimitError = error?.message?.includes("limit") || error?.message?.includes("credits");
       toast({
-        title: "Generation failed",
+        title: isLimitError ? "Limit reached" : "Generation failed",
         description: error?.message || "Could not generate emails. Please try again.",
         variant: "destructive",
       });
@@ -278,6 +309,17 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
   ).length;
 
   const isGenerating = generateMutation.isPending;
+  
+  // Calculate usage info
+  const emailsUsed = subscription?.limits?.emailsUsed ?? 0;
+  const emailsLimit = subscription?.limits?.emailsLimit ?? 50;
+  const usagePercent = Math.min((emailsUsed / emailsLimit) * 100, 100);
+  const remaining = emailsLimit - emailsUsed;
+  const isNearLimit = usagePercent >= 80;
+  const isAtLimit = remaining <= 0;
+  const isTrialUser = subscription?.freeTrial?.isActive ?? false;
+  const trialDaysRemaining = subscription?.freeTrial?.daysRemaining ?? 0;
+  const canGenerateAll = pendingCount <= remaining;
 
   return (
     <div className="p-6 space-y-6">
@@ -293,6 +335,57 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
           Sample CSV
         </Button>
       </div>
+      
+      {/* Email Usage Display */}
+      <Card className="border-border/50">
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Monthly Email Credits</span>
+              {isTrialUser && (
+                <Badge variant="secondary" className="text-xs gap-1">
+                  <Clock className="h-3 w-3" />
+                  Trial: {trialDaysRemaining} days left
+                </Badge>
+              )}
+            </div>
+            <span className="text-sm font-medium">
+              {emailsUsed} / {emailsLimit} ({remaining} remaining)
+            </span>
+          </div>
+          <Progress 
+            value={usagePercent} 
+            className={`h-2 ${isAtLimit ? "[&>div]:bg-destructive" : isNearLimit ? "[&>div]:bg-yellow-500" : ""}`}
+          />
+          {pendingCount > 0 && !canGenerateAll && (
+            <Alert variant="destructive" className="mt-3">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Insufficient credits</AlertTitle>
+              <AlertDescription className="flex items-center justify-between">
+                <span>
+                  You have {remaining} credits left but {pendingCount} prospects to generate.
+                  {remaining > 0 && ` You can generate up to ${remaining} emails.`}
+                </span>
+                <Button asChild variant="outline" size="sm" className="ml-2">
+                  <a href="/settings">
+                    <Crown className="h-3 w-3 mr-1" />
+                    Upgrade
+                  </a>
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+          {isNearLimit && !isAtLimit && canGenerateAll && (
+            <p className="text-xs text-yellow-600 mt-2 flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              You're approaching your monthly limit
+              {subscription?.limits?.tier === "free" && (
+                <a href="/settings" className="underline ml-1 font-medium">Upgrade to Pro</a>
+              )}
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="border-border/50">
         <CardHeader className="pb-4">

@@ -26,9 +26,11 @@ import {
   updateSequenceRequestSchema,
   enrollProspectsRequestSchema,
   detectTriggersRequestSchema,
+  SUBSCRIPTION_LIMITS,
   type CrmProvider,
   type SequenceStatus,
   type EnrollmentStatus,
+  type SubscriptionTier,
 } from "@shared/schema";
 import { z } from "zod";
 import { DEV_USER_HEADER } from "./constants";
@@ -215,11 +217,39 @@ export async function registerRoutes(
       const linkedinContent = (req.body as any).linkedinContent;
       const userId = getUserIdOrDefault(req);
       
+      // Check email limits (considering free trial)
+      const limitCheck = await storage.checkEmailLimit(userId);
+      const trialStatus = await storage.checkFreeTrialStatus(userId);
+      
+      // Determine effective limit based on free trial status
+      let effectiveLimit = limitCheck.limit;
+      let effectiveTier: SubscriptionTier = limitCheck.tier;
+      
+      if (trialStatus.isActive && limitCheck.tier === "free") {
+        effectiveLimit = SUBSCRIPTION_LIMITS.pro.emailsPerMonth;
+        effectiveTier = "pro";
+      }
+      
+      if (limitCheck.used >= effectiveLimit) {
+        const tierDisplay = effectiveTier === "free" ? "Free" : effectiveTier === "pro" ? "Pro" : "Enterprise";
+        return res.status(403).json({
+          error: "Email limit exceeded",
+          message: `You've reached your monthly limit of ${effectiveLimit} emails on the ${tierDisplay} plan.`,
+          used: limitCheck.used,
+          limit: effectiveLimit,
+          tier: effectiveTier,
+          upgradeUrl: "/settings",
+          isTrialUser: trialStatus.isActive,
+        });
+      }
+      
       const email = await generateEmail({ prospect, tone, length, triggers, linkedinContent, userId });
+      
+      // Increment email usage
+      await storage.incrementEmailUsage(userId);
       
       // Save to email activities table
       try {
-        const userId = getUserIdOrDefault(req);
         await storage.saveEmailActivity({
           userId,
           prospectEmail: prospect.email,
@@ -401,6 +431,37 @@ export async function registerRoutes(
       const { prospects, tone, length } = parsed.data;
       const userId = getUserIdOrDefault(req);
       
+      // Check email limits for bulk (considering free trial)
+      const limitCheck = await storage.checkEmailLimit(userId);
+      const trialStatus = await storage.checkFreeTrialStatus(userId);
+      
+      // Determine effective limit based on free trial status
+      let effectiveLimit = limitCheck.limit;
+      let effectiveTier: SubscriptionTier = limitCheck.tier;
+      
+      if (trialStatus.isActive && limitCheck.tier === "free") {
+        effectiveLimit = SUBSCRIPTION_LIMITS.pro.emailsPerMonth;
+        effectiveTier = "pro";
+      }
+      
+      const remaining = effectiveLimit - limitCheck.used;
+      
+      // Check if user has enough credits for this batch
+      if (prospects.length > remaining) {
+        return res.status(403).json({
+          error: "Insufficient email credits",
+          message: `You can only generate ${remaining} more emails this month. Requested: ${prospects.length}`,
+          used: limitCheck.used,
+          limit: effectiveLimit,
+          remaining,
+          requested: prospects.length,
+          tier: effectiveTier,
+          upgradeUrl: "/settings",
+          isTrialUser: trialStatus.isActive,
+        });
+      }
+      
+      
       const batchInput = prospects.map((prospect) => ({
         prospect,
         tone,
@@ -417,10 +478,14 @@ export async function registerRoutes(
         status: results[index].email ? "ready" : "error",
       }));
 
+      // Count successful generations and increment usage
+      let successCount = 0;
+      
       // Save all generated emails
       for (let i = 0; i < response.length; i++) {
         const item = response[i];
         if (item.email) {
+          successCount++;
           try {
             await storage.saveEmailActivity({
               userId,
@@ -437,6 +502,11 @@ export async function registerRoutes(
             console.error("Failed to save email activity:", saveError);
           }
         }
+      }
+      
+      // Increment email usage for successful generations
+      for (let i = 0; i < successCount; i++) {
+        await storage.incrementEmailUsage(userId);
       }
 
       return res.json(response);
@@ -1886,15 +1956,38 @@ export async function registerRoutes(
   app.get("/api/subscription", async (req, res) => {
     try {
       const userId = getUserIdOrDefault(req);
-      const subscription = await storage.getSubscriptionInfo(userId);
+      let subscription = await storage.getSubscriptionInfo(userId);
       const limits = await storage.checkEmailLimit(userId);
+      let trialStatus = await storage.checkFreeTrialStatus(userId);
+      
+      // Auto-start free trial for new users who don't have one
+      if (!subscription.freeTrialStartedAt && subscription.subscriptionTier === "free") {
+        trialStatus = await storage.startFreeTrial(userId);
+        // Refresh subscription info
+        subscription = await storage.getSubscriptionInfo(userId);
+      }
+      
+      // Calculate effective limits considering free trial
+      let effectiveLimit = limits.limit;
+      let effectiveTier = limits.tier;
+      
+      if (trialStatus.isActive && limits.tier === "free") {
+        effectiveLimit = SUBSCRIPTION_LIMITS.pro.emailsPerMonth;
+        effectiveTier = "pro" as const;
+      }
       
       return res.json({
         ...subscription,
         limits: {
           emailsUsed: limits.used,
-          emailsLimit: limits.limit,
-          tier: limits.tier,
+          emailsLimit: effectiveLimit,
+          tier: effectiveTier,
+        },
+        freeTrial: {
+          isActive: trialStatus.isActive,
+          daysRemaining: trialStatus.daysRemaining,
+          hasExpired: trialStatus.hasExpired,
+          endsAt: trialStatus.endsAt,
         },
       });
     } catch (error: any) {

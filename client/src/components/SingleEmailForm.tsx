@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
-import { Loader2, Sparkles, Copy, Send, RefreshCw, Check, Search, Newspaper, Linkedin, Building, TrendingUp, Briefcase, DollarSign, X } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Loader2, Sparkles, Copy, Send, RefreshCw, Check, Search, Newspaper, Linkedin, Building, TrendingUp, Briefcase, DollarSign, X, AlertTriangle, Crown, Clock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { queryClient } from "@/lib/queryClient";
 import {
   Select,
   SelectContent,
@@ -84,6 +87,25 @@ const relevanceColors = {
   low: "bg-muted/50 text-muted-foreground/70 border-border/50",
 };
 
+// Subscription info type
+interface SubscriptionInfo {
+  subscriptionTier: "free" | "pro" | "enterprise";
+  emailsUsedThisMonth: number;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  limits: {
+    emailsUsed: number;
+    emailsLimit: number;
+    tier: "free" | "pro" | "enterprise";
+  };
+  freeTrial?: {
+    isActive: boolean;
+    daysRemaining: number;
+    hasExpired: boolean;
+    endsAt: string | null;
+  };
+}
+
 export function SingleEmailForm() {
   const [generatedEmail, setGeneratedEmail] = useState<GeneratedEmail | null>(null);
   const [copied, setCopied] = useState(false);
@@ -95,6 +117,11 @@ export function SingleEmailForm() {
   const { toast } = useToast();
 
   const [showLinkedInContent, setShowLinkedInContent] = useState(false);
+  
+  // Fetch subscription info
+  const { data: subscription } = useQuery<SubscriptionInfo>({
+    queryKey: ["/api/subscription"],
+  });
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -169,14 +196,18 @@ export function SingleEmailForm() {
     },
     onSuccess: (email) => {
       setGeneratedEmail(email);
+      // Refresh subscription data to update usage counts
+      queryClient.invalidateQueries({ queryKey: ["/api/subscription"] });
       toast({
         title: "Email generated",
         description: "Your Basho email is ready to review.",
       });
     },
     onError: (error: any) => {
+      // Check if it's a limit exceeded error
+      const isLimitError = error?.message?.includes("limit") || error?.message?.includes("credits");
       toast({
-        title: "Generation failed",
+        title: isLimitError ? "Limit reached" : "Generation failed",
         description: error?.message || "Could not generate email. Please try again.",
         variant: "destructive",
       });
@@ -276,8 +307,66 @@ export function SingleEmailForm() {
   const isDetecting = detectTriggersMutation.isPending;
   const selectedTriggerCount = triggers.filter(t => t.selected).length;
 
+  // Calculate usage info
+  const emailsUsed = subscription?.limits?.emailsUsed ?? 0;
+  const emailsLimit = subscription?.limits?.emailsLimit ?? 50;
+  const usagePercent = Math.min((emailsUsed / emailsLimit) * 100, 100);
+  const remaining = emailsLimit - emailsUsed;
+  const isNearLimit = usagePercent >= 80;
+  const isAtLimit = remaining <= 0;
+  const isTrialUser = subscription?.freeTrial?.isActive ?? false;
+  const trialDaysRemaining = subscription?.freeTrial?.daysRemaining ?? 0;
+
   return (
     <div className="space-y-6">
+      {/* Email Usage Display */}
+      <Card className="border-border/50">
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Monthly Email Credits</span>
+              {isTrialUser && (
+                <Badge variant="secondary" className="text-xs gap-1">
+                  <Clock className="h-3 w-3" />
+                  Trial: {trialDaysRemaining} days left
+                </Badge>
+              )}
+            </div>
+            <span className="text-sm font-medium">
+              {emailsUsed} / {emailsLimit}
+            </span>
+          </div>
+          <Progress 
+            value={usagePercent} 
+            className={`h-2 ${isAtLimit ? "[&>div]:bg-destructive" : isNearLimit ? "[&>div]:bg-yellow-500" : ""}`}
+          />
+          {isNearLimit && !isAtLimit && (
+            <p className="text-xs text-yellow-600 mt-2 flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              You're approaching your monthly limit
+              {subscription?.limits?.tier === "free" && (
+                <a href="/settings" className="underline ml-1 font-medium">Upgrade to Pro</a>
+              )}
+            </p>
+          )}
+          {isAtLimit && (
+            <Alert variant="destructive" className="mt-3">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Limit reached</AlertTitle>
+              <AlertDescription className="flex items-center justify-between">
+                <span>You've used all your email credits for this month.</span>
+                <Button asChild variant="outline" size="sm" className="ml-2">
+                  <a href="/settings">
+                    <Crown className="h-3 w-3 mr-1" />
+                    Upgrade
+                  </a>
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="border-border/50">
         <CardHeader className="pb-4">
           <CardTitle className="text-lg font-medium">Prospect Details</CardTitle>
