@@ -45,6 +45,12 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { DetectedTrigger, TriggerType } from "@shared/schema";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const formSchema = z.object({
   firstName: z.string().min(1, "Required"),
@@ -625,7 +631,7 @@ This helps generate hyper-personalized emails."
                   type="button"
                   variant="outline"
                   onClick={handleDetectTriggers}
-                  disabled={isDetecting || isGenerating}
+                  disabled={isDetecting || isGenerating || isAtLimit}
                   className="flex-1"
                   data-testid="button-detect-triggers"
                 >
@@ -641,27 +647,45 @@ This helps generate hyper-personalized emails."
                     </>
                   )}
                 </Button>
-                <Button 
-                  type="submit" 
-                  disabled={isGenerating || isDetecting} 
-                  className="flex-1" 
-                  data-testid="button-generate"
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Generate Email
-                      {selectedTriggerCount > 0 && (
-                        <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs">
-                          +{selectedTriggerCount}
-                        </Badge>
-                      )}
-                    </>
+                
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex-1">
+                        <Button 
+                          type="submit" 
+                          disabled={isGenerating || isDetecting || isAtLimit} 
+                          className="w-full"
+                          data-testid="button-generate"
+                        >
+                          {isGenerating ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              Generate Email
+                              {selectedTriggerCount > 0 && (
+                                <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs">
+                                  +{selectedTriggerCount}
+                                </Badge>
+                              )}
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </TooltipTrigger>
+                    {isAtLimit && (
+                      <TooltipContent>
+                        <p className="font-medium">Upgrade required to continue</p>
+                        <p className="text-xs text-muted-foreground">You've reached your monthly limit</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
                   )}
                 </Button>
               </div>
