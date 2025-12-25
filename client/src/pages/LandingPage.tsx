@@ -102,10 +102,10 @@ const pricingTiers = [
   },
   {
     name: "Pro",
-    price: "$49",
+    price: "$19.99",
     description: "For growing sales teams",
     features: [
-      "500 emails per month",
+      "1,000 emails per month",
       "Bulk CSV campaigns",
       "Advanced AI personalization",
       "Priority LinkedIn enrichment",

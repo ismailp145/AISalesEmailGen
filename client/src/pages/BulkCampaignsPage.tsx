@@ -14,6 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { FileDropzone } from "@/components/FileDropzone";
 import { ProspectTable, type Prospect } from "@/components/ProspectTable";
 import { EmailPreviewModal } from "@/components/EmailPreviewModal";
@@ -458,15 +464,27 @@ Emily,Rodriguez,Head of Growth,ScaleUp,emily@scaleup.co,https://linkedin.com/in/
                     </>
                   )}
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={handleSendSelected}
-                  disabled={selectedReadyCount === 0}
-                  data-testid="button-send-selected"
-                >
-                  <Send className="w-4 h-4 mr-2" />
-                  Mark Sent ({selectedReadyCount})
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          size="sm"
+                          onClick={handleSendSelected}
+                          disabled
+                          data-testid="button-send-selected"
+                          className="opacity-50 cursor-not-allowed"
+                        >
+                          <Send className="w-4 h-4 mr-2" />
+                          Mark Sent ({selectedReadyCount})
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Coming soon</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
           </CardHeader>

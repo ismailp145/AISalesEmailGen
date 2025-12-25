@@ -55,7 +55,12 @@ Basho Studio is a full-stack AI-powered sales email generator designed for perso
    npm install
    ```
 
-3. Set up environment variables (see [Configuration](#configuration))
+3. Set up environment variables:
+   ```bash
+   cp .env.example .env
+   # Edit .env and fill in your values
+   ```
+   See [Configuration](#configuration) below and `.env.example` for all available options.
 
 4. Push the database schema:
    ```bash
@@ -70,6 +75,17 @@ Basho Studio is a full-stack AI-powered sales email generator designed for perso
 The application will be available at `http://localhost:3000`.
 
 ## Configuration
+
+### Environment Setup
+
+1. Copy the example environment file:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Fill in the required values in `.env`
+
+See `.env.example` for a complete list of all available configuration options with descriptions.
 
 ### Required Environment Variables
 
@@ -219,3 +235,84 @@ FireCrawl enables web scraping and company research features:
 2. Create a new application in Clerk dashboard
 3. Add `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` environment variables
 4. Wrap routes with `<ProtectedRoute>` component to enable authentication
+
+## Production Deployment
+
+For production deployment instructions, see:
+- **[PRODUCTION_DEPLOYMENT.md](./PRODUCTION_DEPLOYMENT.md)** - Complete deployment guide
+- **[SECURITY.md](./SECURITY.md)** - Security best practices and checklist
+- **[STRIPE_SETUP.md](./STRIPE_SETUP.md)** - Stripe payment configuration
+
+### Quick Production Checklist
+
+- [ ] Set all required environment variables
+- [ ] Use production API keys (not test keys)
+- [ ] Configure Stripe with live mode
+- [ ] Set up SSL certificate (HTTPS)
+- [ ] Configure session storage (Redis or PostgreSQL)
+- [ ] Enable rate limiting
+- [ ] Run security audit: `npm audit`
+- [ ] Test all critical flows
+
+## Subscription Tiers
+
+| Tier | Emails/Month | Price | Features |
+|------|--------------|-------|----------|
+| **Starter** | 50 | Free | Basic features, community support |
+| **Pro** | 1,000 | $19.99/month | Bulk campaigns, sequences, priority support |
+| **Enterprise** | Unlimited | Custom | Custom AI training, SSO, dedicated support |
+
+### Free Trial
+
+New users automatically receive a **14-day free trial** with full Pro tier access:
+- 1,000 emails per month during trial
+- All Pro features unlocked
+- No credit card required
+- Automatically downgrades to Free tier after 14 days
+
+## Development
+
+### Environment
+
+- Node.js 18+ required
+- PostgreSQL database (Neon recommended)
+- npm for package management
+
+### Development Workflow
+
+1. Make changes to code
+2. TypeScript will auto-compile in dev mode
+3. Vite will hot-reload client changes
+4. Server restarts automatically with tsx
+
+### Type Checking
+
+```bash
+npm run check
+```
+
+### Database Changes
+
+After modifying `shared/schema.ts`:
+```bash
+npm run db:push
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run `npm run check` to verify types
+5. Submit a pull request
+
+## License
+
+MIT
+
+## Support
+
+For issues or questions:
+- Email: hello@bashostudio.com
+- Check existing documentation first
+- Review security practices in [SECURITY.md](./SECURITY.md)
