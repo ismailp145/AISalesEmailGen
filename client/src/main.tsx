@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { ClerkProviderWrapper } from "./components/auth/ClerkProviderWrapper";
+import { Analytics } from "@vercel/analytics/react";
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const authMissing = !PUBLISHABLE_KEY;
@@ -22,6 +23,7 @@ root.render(
         </div>
       )}
       <App />
+      <Analytics />
     </ClerkProviderWrapper>
   </StrictMode>
 );
