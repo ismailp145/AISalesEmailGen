@@ -305,12 +305,26 @@ export default function IntegrationsPage() {
         </p>
       </div>
 
-      {/* CRM Integrations */}
-      <div className="space-y-3">
+      {/* Coming Soon Message */}
+      <Card className="border-border/50">
+        <CardContent className="p-12 text-center">
+          <AlertCircle className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+          <CardTitle className="text-base font-medium mb-1">Coming Soon</CardTitle>
+          <CardDescription>
+            Integrations are currently under development and will be available soon.
+          </CardDescription>
+        </CardContent>
+      </Card>
+
+      {/* COMMENTED OUT - Original Integrations Content */}
+      {false && (
+        <>
+          {/* CRM Integrations */}
+          <div className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">CRM Integrations</h2>
         
-        {/* HubSpot Card */}
-        <Card className="border-border/50">
+            {/* HubSpot Card */}
+            <Card className="border-border/50">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -404,8 +418,8 @@ export default function IntegrationsPage() {
           </CardContent>
         </Card>
 
-        {/* Salesforce Card */}
-        <Card className="border-border/50">
+            {/* Salesforce Card */}
+            <Card className="border-border/50">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -477,12 +491,12 @@ export default function IntegrationsPage() {
         </Card>
       </div>
 
-      {/* Email Integrations */}
-      <div className="space-y-3">
+          {/* Email Integrations */}
+          <div className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Email Sending</h2>
         
-        {/* Gmail Card */}
-        <Card className="border-border/50">
+            {/* Gmail Card */}
+            <Card className="border-border/50">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -554,8 +568,8 @@ export default function IntegrationsPage() {
           </CardContent>
         </Card>
 
-        {/* Outlook Card */}
-        <Card className="border-border/50">
+            {/* Outlook Card */}
+            <Card className="border-border/50">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -627,8 +641,8 @@ export default function IntegrationsPage() {
           </CardContent>
         </Card>
 
-        {/* SendGrid Info Card */}
-        <Card className="border-border/50 bg-muted/30">
+            {/* SendGrid Info Card */}
+            <Card className="border-border/50 bg-muted/30">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -671,6 +685,8 @@ export default function IntegrationsPage() {
           </li>
         </ul>
       </div>
+        </>
+      )}
     </div>
   );
 }

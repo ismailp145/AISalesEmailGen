@@ -806,14 +806,27 @@ This helps generate hyper-personalized emails."
                 >
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={handleSend}
-                  data-testid="button-send"
-                >
-                  <Send className="w-4 h-4 mr-2" />
-                  Send
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          size="sm"
+                          onClick={handleSend}
+                          data-testid="button-send"
+                          disabled
+                          className="opacity-50 cursor-not-allowed"
+                        >
+                          <Send className="w-4 h-4 mr-2" />
+                          Send
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Coming soon</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
           </CardHeader>

@@ -9,9 +9,9 @@ import { clerkAuthMiddleware, requireAuthentication } from "./middleware/clerk";
 import { DEV_SESSION_SECRET } from "./constants";
 
 // TODO: Enable for production security (see SECURITY.md and PRODUCTION_DEPLOYMENT.md)
-// import { logEnvironmentValidation } from "./env-validation";
-// import { configureCors, validateCorsConfig } from "./middleware/cors";
-// import { apiLimiter, strictLimiter } from "./middleware/rate-limit";
+import { logEnvironmentValidation } from "./env-validation";
+import { configureCors, validateCorsConfig } from "./middleware/cors";
+import { apiLimiter, strictLimiter } from "./middleware/rate-limit";
 
 // Validate environment on startup (uncomment for production)
 // logEnvironmentValidation();
@@ -27,12 +27,12 @@ declare module "http" {
 }
 
 // TODO: Configure CORS for production (uncomment after installing cors package)
-// validateCorsConfig();
-// app.use(configureCors());
+validateCorsConfig();
+app.use(configureCors());
 
 // TODO: Add request size limits for security (uncomment for production)
-// app.use(express.json({ limit: '100kb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
-// app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+app.use(express.json({ limit: '100kb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
+app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 
 app.use(
   express.json({
@@ -90,11 +90,11 @@ if (process.env.CLERK_SECRET_KEY) {
 
 // TODO: Add rate limiting for production (uncomment after installing express-rate-limit)
 // Apply general rate limiting to all API routes
-// app.use('/api/', apiLimiter());
+app.use('/api/', apiLimiter());
 // Apply strict rate limiting to expensive operations
-// app.use('/api/generate-email', strictLimiter());
-// app.use('/api/generate-emails-bulk', strictLimiter());
-// app.use('/api/detect-triggers', strictLimiter());
+app.use('/api/generate-email', strictLimiter());
+app.use('/api/generate-emails-bulk', strictLimiter());
+app.use('/api/detect-triggers', strictLimiter());
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

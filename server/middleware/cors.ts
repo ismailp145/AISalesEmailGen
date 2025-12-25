@@ -14,15 +14,15 @@
  */
 
 // TODO: Uncomment after installing cors
-// import cors from 'cors';
-// import type { CorsOptions } from 'cors';
+import cors from 'cors';
+import type { CorsOptions } from 'cors';
 
 /**
  * Configure CORS with environment-based allowed origins
  */
 export function configureCors() {
   // TODO: Uncomment after installing cors
-  /*
+  
   const allowedOrigins = process.env.CORS_ORIGIN 
     ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
     : ['http://localhost:3000', 'http://localhost:5173']; // Development defaults
@@ -50,22 +50,22 @@ export function configureCors() {
   };
 
   return cors(corsOptions);
-  */
+  
 
   // Placeholder middleware that allows all origins (development mode)
-  return (req: any, res: any, next: any) => {
-    // Development mode: Allow all origins
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Id, X-Dev-User-Id');
+  // return (req: any, res: any, next: any) => {
+  //   // Development mode: Allow all origins
+  //   res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  //   res.header('Access-Control-Allow-Credentials', 'true');
+  //   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  //   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Id, X-Dev-User-Id');
     
-    if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
-    }
+  //   if (req.method === 'OPTIONS') {
+  //     return res.sendStatus(200);
+  //   }
     
-    next();
-  };
+  //   next();
+  // };
 }
 
 /**

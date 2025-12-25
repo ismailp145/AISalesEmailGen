@@ -15,7 +15,7 @@
  */
 
 // TODO: Uncomment after installing express-rate-limit
-// import rateLimit from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 
 /**
  * General API rate limiter
@@ -23,7 +23,6 @@
  */
 export const apiLimiter = () => {
   // TODO: Uncomment after installing express-rate-limit
-  /*
   return rateLimit({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes default
     max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // 100 requests per window
@@ -38,10 +37,7 @@ export const apiLimiter = () => {
       });
     },
   });
-  */
   
-  // Placeholder middleware that does nothing (for when rate limiting is not enabled)
-  return (req: any, res: any, next: any) => next();
 };
 
 /**
@@ -51,7 +47,6 @@ export const apiLimiter = () => {
  */
 export const strictLimiter = () => {
   // TODO: Uncomment after installing express-rate-limit
-  /*
   return rateLimit({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
     max: parseInt(process.env.STRICT_RATE_LIMIT_MAX || '20'), // 20 requests per window
@@ -67,10 +62,6 @@ export const strictLimiter = () => {
       });
     },
   });
-  */
-  
-  // Placeholder middleware that does nothing (for when rate limiting is not enabled)
-  return (req: any, res: any, next: any) => next();
 };
 
 /**
@@ -80,7 +71,6 @@ export const strictLimiter = () => {
  */
 export const authLimiter = () => {
   // TODO: Uncomment after installing express-rate-limit
-  /*
   return rateLimit({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
     max: 5, // 5 requests per window
@@ -96,10 +86,6 @@ export const authLimiter = () => {
       });
     },
   });
-  */
-  
-  // Placeholder middleware that does nothing (for when rate limiting is not enabled)
-  return (req: any, res: any, next: any) => next();
 };
 
 // Export types for TypeScript
