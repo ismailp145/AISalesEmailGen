@@ -207,8 +207,8 @@ export const checkBulkLimit: RequestHandler = async (
     
     const limits = SUBSCRIPTION_LIMITS[effectiveTier];
     
-    // Check if bulk campaigns are allowed
-    if (limits.bulkCampaigns === 0) {
+    // Check if bulk campaigns are allowed (only unlimited is -1)
+    if (limits.bulkCampaigns !== -1 && limits.bulkCampaigns <= 0) {
       res.status(403).json({
         error: "Bulk campaigns not available",
         message: "Bulk campaigns require a Pro subscription or higher.",

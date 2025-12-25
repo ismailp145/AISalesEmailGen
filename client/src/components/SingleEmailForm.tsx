@@ -686,9 +686,6 @@ This helps generate hyper-personalized emails."
                   </Tooltip>
                 </TooltipProvider>
               </div>
-                  )}
-                </Button>
-              </div>
             </form>
           </Form>
         </CardContent>
