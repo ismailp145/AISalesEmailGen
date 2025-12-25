@@ -73,20 +73,19 @@ async function processEmail(scheduledEmail: ScheduledEmailRecord): Promise<void>
     return;
   }
 
-  // Get user profile for sender info
-  const profile = await storage.getUserProfile();
-  
-  if (!profile.senderEmail) {
-    await storage.updateScheduledEmailStatus(scheduledEmail.id, "failed", "No sender email configured in profile");
-    return;
-  }
-
   // Get prospect for recipient email
-  const prospects = await storage.getAllProspects();
-  const prospect = prospects.find(p => p.id === scheduledEmail.prospectId);
+  const prospect = await storage.getProspectById(scheduledEmail.prospectId);
   
   if (!prospect) {
     await storage.updateScheduledEmailStatus(scheduledEmail.id, "failed", "Prospect not found");
+    return;
+  }
+
+  // Get user profile for sender info (using userId from prospect)
+  const profile = await storage.getUserProfile(prospect.userId);
+  
+  if (!profile.senderEmail) {
+    await storage.updateScheduledEmailStatus(scheduledEmail.id, "failed", "No sender email configured in profile");
     return;
   }
 
@@ -112,9 +111,8 @@ async function processEmail(scheduledEmail: ScheduledEmailRecord): Promise<void>
 }
 
 async function scheduleNextStep(enrollmentId: number, currentStepId: number): Promise<void> {
-  // Get enrollment
-  const enrollments = await storage.getEnrollments(0); // Get all enrollments
-  const enrollment = enrollments.find(e => e.id === enrollmentId);
+  // Get enrollment by ID
+  const enrollment = await storage.getEnrollmentById(enrollmentId);
   
   if (!enrollment || enrollment.status !== "active") {
     return;
@@ -142,7 +140,7 @@ export async function scheduleInitialEmails(
   prospectId: number,
   sequenceId: number
 ): Promise<void> {
-  const sequence = await storage.getSequence(sequenceId);
+  const sequence = await storage.getSequenceById(sequenceId);
   
   if (!sequence || sequence.steps.length === 0) {
     console.log(`[Scheduler] No steps found for sequence ${sequenceId}`);
@@ -160,13 +158,12 @@ async function scheduleStepEmail(
   sequenceId: number,
   step: SequenceStepRecord
 ): Promise<void> {
-  // Get sequence for tone/length settings
-  const sequence = await storage.getSequence(sequenceId);
+  // Get sequence for tone/length settings (internal use - no userId check)
+  const sequence = await storage.getSequenceById(sequenceId);
   if (!sequence) return;
 
   // Get prospect for email generation
-  const prospects = await storage.getAllProspects();
-  const prospectRecord = prospects.find(p => p.id === prospectId);
+  const prospectRecord = await storage.getProspectById(prospectId);
   
   if (!prospectRecord) {
     console.error(`[Scheduler] Prospect ${prospectId} not found`);
@@ -209,6 +206,7 @@ async function scheduleStepEmail(
         prospect,
         tone: sequence.tone as "casual" | "professional" | "hyper-personal",
         length: sequence.length as "short" | "medium",
+        userId: prospectRecord.userId,
       });
 
       if (!subject) subject = generatedEmail.subject;

@@ -1,15 +1,23 @@
 import { z } from "zod";
-import { pgTable, text, serial, timestamp, jsonb, varchar, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, jsonb, varchar, integer, boolean, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
+
+// ============================================
+// Enums
+// ============================================
+
+// Subscription tier enum for user billing
+export const subscriptionTierEnum = pgEnum("subscription_tier", ["free", "pro", "enterprise"]);
 
 // ============================================
 // Database Tables (Drizzle ORM)
 // ============================================
 
-// User profiles table - stores sender/company info
+// User profiles table - stores sender/company info and subscription data
 export const userProfiles = pgTable("user_profiles", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull().unique(), // Clerk user ID - unique to ensure one profile per user
   senderName: text("sender_name").notNull(),
   senderTitle: text("sender_title"),
   senderEmail: text("sender_email"),
@@ -26,6 +34,20 @@ export const userProfiles = pgTable("user_profiles", {
   differentiators: text("differentiators"),
   socialProof: text("social_proof"),
   commonObjections: text("common_objections"),
+  
+  // Subscription fields
+  subscriptionTier: subscriptionTierEnum("subscription_tier").notNull().default("free"),
+  emailsUsedThisMonth: integer("emails_used_this_month").notNull().default(0),
+  emailsUsedThisMonthResetAt: timestamp("emails_used_this_month_reset_at").defaultNow().notNull(),
+  subscriptionStartsAt: timestamp("subscription_starts_at"),
+  subscriptionEndsAt: timestamp("subscription_ends_at"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  
+  // Free trial fields
+  freeTrialStartedAt: timestamp("free_trial_started_at"),
+  freeTrialEndsAt: timestamp("free_trial_ends_at"),
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -33,12 +55,14 @@ export const userProfiles = pgTable("user_profiles", {
 // Prospects table - stores prospect data (can be from CSV or CRM)
 export const prospects = pgTable("prospects", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(), // Clerk user ID
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   email: text("email").notNull(),
   company: text("company").notNull(),
   title: text("title").notNull(),
   linkedinUrl: text("linkedin_url"),
+  linkedinContent: text("linkedin_content"), // Pasted LinkedIn profile data
   notes: text("notes"),
   crmId: text("crm_id"), // ID from HubSpot/Salesforce
   crmSource: text("crm_source"), // 'hubspot', 'salesforce', 'pipedrive', 'csv'
@@ -50,12 +74,14 @@ export const prospects = pgTable("prospects", {
 // Email activities table - tracks generated/sent emails
 export const emailActivities = pgTable("email_activities", {
   id: serial("id").primaryKey(),
-  prospectId: serial("prospect_id").references(() => prospects.id),
+  userId: text("user_id").notNull(), // Clerk user ID
+  prospectId: integer("prospect_id").references(() => prospects.id), // Nullable - emails can exist without a prospect
   subject: text("subject").notNull(),
   body: text("body").notNull(),
   tone: text("tone").notNull(),
   length: text("length").notNull(),
   status: text("status").notNull().default("generated"), // 'generated', 'sent', 'opened', 'replied'
+  emailProvider: text("email_provider"), // 'sendgrid', 'gmail', 'outlook'
   sentAt: timestamp("sent_at"),
   crmActivityId: text("crm_activity_id"), // ID of activity pushed to CRM
   crmSyncedAt: timestamp("crm_synced_at"),
@@ -65,11 +91,12 @@ export const emailActivities = pgTable("email_activities", {
 // CRM connections table - stores OAuth tokens and connection state
 export const crmConnections = pgTable("crm_connections", {
   id: serial("id").primaryKey(),
-  provider: text("provider").notNull(), // 'hubspot', 'salesforce', 'pipedrive'
+  userId: text("user_id").notNull(), // Clerk user ID
+  provider: text("provider").notNull(), // 'hubspot', 'salesforce', 'pipedrive', 'gmail', 'outlook'
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
   tokenExpiresAt: timestamp("token_expires_at"),
-  accountId: text("account_id"), // HubSpot portal ID, Salesforce org ID, etc.
+  accountId: text("account_id"), // HubSpot portal ID, Salesforce instance URL, etc.
   accountName: text("account_name"),
   isActive: text("is_active").notNull().default("true"),
   lastSyncAt: timestamp("last_sync_at"),
@@ -85,6 +112,7 @@ export const crmConnections = pgTable("crm_connections", {
 // Sequences table - the sequence template
 export const sequences = pgTable("sequences", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(), // Clerk user ID
   name: text("name").notNull(),
   description: text("description"),
   status: text("status").notNull().default("draft"), // 'draft', 'active', 'paused', 'archived'
@@ -139,6 +167,31 @@ export const scheduledEmails = pgTable("scheduled_emails", {
   error: text("error"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ============================================
+// Subscription Limits
+// ============================================
+
+export const SUBSCRIPTION_LIMITS = {
+  free: {
+    emailsPerMonth: 50,
+    bulkCampaigns: 1,
+    sequences: 1,
+  },
+  pro: {
+    emailsPerMonth: 1000,
+    bulkCampaigns: 10,
+    sequences: 10,
+  },
+  enterprise: {
+    emailsPerMonth: 10000,
+    bulkCampaigns: -1, // unlimited
+    sequences: -1, // unlimited
+  },
+} as const;
+
+export type SubscriptionTier = keyof typeof SUBSCRIPTION_LIMITS;
+export type SubscriptionLimits = typeof SUBSCRIPTION_LIMITS[SubscriptionTier];
 
 // Relations
 export const prospectsRelations = relations(prospects, ({ many }) => ({
@@ -265,6 +318,46 @@ export const defaultUserProfile: UserProfile = {
   differentiators: "",
   socialProof: "",
   commonObjections: "",
+};
+
+// User subscription info schema (for API responses)
+export const userSubscriptionSchema = z.object({
+  subscriptionTier: z.enum(["free", "pro", "enterprise"]).default("free"),
+  emailsUsedThisMonth: z.number().default(0),
+  emailsUsedThisMonthResetAt: z.date().optional(),
+  subscriptionStartsAt: z.date().nullable().optional(),
+  subscriptionEndsAt: z.date().nullable().optional(),
+  stripeCustomerId: z.string().nullable().optional(),
+  stripeSubscriptionId: z.string().nullable().optional(),
+  freeTrialStartedAt: z.date().nullable().optional(),
+  freeTrialEndsAt: z.date().nullable().optional(),
+});
+
+export type UserSubscription = z.infer<typeof userSubscriptionSchema>;
+
+// Free trial status interface
+export interface FreeTrialStatus {
+  isActive: boolean;
+  startedAt: Date | null;
+  endsAt: Date | null;
+  daysRemaining: number;
+  hasExpired: boolean;
+}
+
+// Default free trial duration in days
+export const FREE_TRIAL_DAYS = 14;
+
+// Default subscription for new users
+export const defaultUserSubscription: UserSubscription = {
+  subscriptionTier: "free",
+  emailsUsedThisMonth: 0,
+  emailsUsedThisMonthResetAt: undefined,
+  subscriptionStartsAt: null,
+  subscriptionEndsAt: null,
+  stripeCustomerId: null,
+  stripeSubscriptionId: null,
+  freeTrialStartedAt: null,
+  freeTrialEndsAt: null,
 };
 
 // Prospect schema for email generation
@@ -421,6 +514,7 @@ export interface DetectedTrigger {
 
 export const detectTriggersRequestSchema = z.object({
   prospect: prospectSchema,
+  companyWebsite: z.string().url("Invalid URL").optional().or(z.literal("")),
 });
 
 export type DetectTriggersRequest = z.infer<typeof detectTriggersRequestSchema>;
@@ -428,4 +522,8 @@ export type DetectTriggersRequest = z.infer<typeof detectTriggersRequestSchema>;
 export interface DetectTriggersResponse {
   triggers: DetectedTrigger[];
   prospectSummary: string;
+  companyData?: {
+    websiteInfo?: string;
+    recentNews?: string;
+  };
 }

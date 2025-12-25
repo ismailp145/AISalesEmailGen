@@ -10,7 +10,12 @@ import {
   sequenceSteps,
   sequenceEnrollments,
   scheduledEmails,
+  SUBSCRIPTION_LIMITS,
+  FREE_TRIAL_DAYS,
   type UserProfile,
+  type UserSubscription,
+  type SubscriptionTier,
+  type FreeTrialStatus,
   type Prospect,
   type ProspectWithStatus,
   type GeneratedEmail,
@@ -31,13 +36,47 @@ import {
   type CreateSequenceRequest,
   type SequenceStatus,
   type EnrollmentStatus,
+  type EmailActivityRecord,
   defaultUserProfile,
+  defaultUserSubscription,
 } from "@shared/schema";
+
+// Extended CRM connection with full OAuth data
+export interface CrmConnectionFull extends CrmConnection {
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  instanceUrl?: string | null;
+}
+
+// Email activity input for saving
+export interface SaveEmailActivityInput {
+  userId: string;
+  prospectEmail: string;
+  prospectName: string;
+  prospectCompany: string;
+  subject: string;
+  body: string;
+  tone: string;
+  length: string;
+  status: string;
+  emailProvider?: string;
+}
 
 export interface IStorage {
   // User profile operations
-  getUserProfile(): Promise<UserProfile>;
-  saveUserProfile(profile: UserProfile): Promise<UserProfile>;
+  getUserProfile(userId: string): Promise<UserProfile>;
+  saveUserProfile(userId: string, profile: UserProfile): Promise<UserProfile>;
+  
+  // Subscription operations
+  getSubscriptionInfo(userId: string): Promise<UserSubscription>;
+  incrementEmailUsage(userId: string): Promise<void>;
+  checkEmailLimit(userId: string): Promise<{ allowed: boolean; used: number; limit: number; tier: SubscriptionTier }>;
+  resetMonthlyUsage(userId: string): Promise<void>;
+  updateSubscriptionTier(userId: string, tier: SubscriptionTier, stripeData?: { customerId?: string; subscriptionId?: string; startsAt?: Date; endsAt?: Date }): Promise<void>;
+  
+  // Free trial operations
+  checkFreeTrialStatus(userId: string): Promise<FreeTrialStatus>;
+  startFreeTrial(userId: string): Promise<FreeTrialStatus>;
   
   // Campaign/Prospect operations (in-memory for bulk campaigns)
   createCampaign(prospects: Prospect[]): Promise<ProspectWithStatus[]>;
@@ -52,29 +91,39 @@ export interface IStorage {
   getProspect(campaignId: string, prospectId: string): Promise<ProspectWithStatus | undefined>;
   
   // CRM operations
-  getCrmConnections(): Promise<CrmConnection[]>;
-  getCrmConnection(provider: CrmProvider): Promise<CrmConnection | null>;
-  saveCrmConnection(provider: CrmProvider, data: {
+  getCrmConnections(userId: string): Promise<CrmConnection[]>;
+  getCrmConnection(userId: string, provider: CrmProvider | string): Promise<CrmConnectionFull | null>;
+  saveCrmConnection(userId: string, provider: CrmProvider | string, data: {
     accessToken?: string;
     refreshToken?: string;
     tokenExpiresAt?: Date;
     accountId?: string;
     accountName?: string;
+    instanceUrl?: string;
   }): Promise<CrmConnection>;
-  disconnectCrm(provider: CrmProvider): Promise<void>;
+  disconnectCrm(userId: string, provider: CrmProvider | string): Promise<void>;
   
   // Prospect database operations (for CRM sync)
   saveProspects(prospects: InsertProspect[]): Promise<ProspectRecord[]>;
   getProspectsByCrmSource(source: CrmProvider): Promise<ProspectRecord[]>;
   getAllProspects(): Promise<ProspectRecord[]>;
+  getProspectById(id: number): Promise<ProspectRecord | null>;
+  
+  // Email activity operations
+  saveEmailActivity(data: SaveEmailActivityInput): Promise<EmailActivityRecord>;
+  getEmailActivities(userId: string, limit?: number, offset?: number, status?: string): Promise<EmailActivityRecord[]>;
+  getEmailActivity(userId: string, id: number): Promise<EmailActivityRecord | null>;
+  updateEmailActivityStatus(userId: string, prospectEmail: string, subject: string, status: string, provider?: string): Promise<void>;
+  updateEmailActivityStatusById(userId: string, id: number, status: string): Promise<void>;
   
   // Sequence operations
-  createSequence(data: CreateSequenceRequest): Promise<SequenceWithSteps>;
-  getSequence(id: number): Promise<SequenceWithSteps | null>;
-  getAllSequences(): Promise<SequenceRecord[]>;
-  updateSequence(id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null>;
-  updateSequenceStatus(id: number, status: SequenceStatus): Promise<SequenceRecord | null>;
-  deleteSequence(id: number): Promise<boolean>;
+  createSequence(userId: string, data: CreateSequenceRequest): Promise<SequenceWithSteps>;
+  getSequence(userId: string, id: number): Promise<SequenceWithSteps | null>;
+  getSequenceById(id: number): Promise<SequenceWithSteps | null>; // Internal use only (no userId check)
+  getAllSequences(userId: string): Promise<SequenceRecord[]>;
+  updateSequence(userId: string, id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null>;
+  updateSequenceStatus(userId: string, id: number, status: SequenceStatus): Promise<SequenceRecord | null>;
+  deleteSequence(userId: string, id: number): Promise<boolean>;
   
   // Sequence step operations
   getSequenceSteps(sequenceId: number): Promise<SequenceStepRecord[]>;
@@ -83,6 +132,7 @@ export interface IStorage {
   // Enrollment operations
   enrollProspects(sequenceId: number, prospectIds: number[]): Promise<SequenceEnrollmentRecord[]>;
   getEnrollments(sequenceId: number): Promise<EnrollmentWithProspect[]>;
+  getEnrollmentById(id: number): Promise<SequenceEnrollmentRecord | null>;
   getEnrollmentsByProspect(prospectId: number): Promise<SequenceEnrollmentRecord[]>;
   updateEnrollmentStatus(enrollmentId: number, status: EnrollmentStatus): Promise<SequenceEnrollmentRecord | null>;
   markAsReplied(enrollmentId: number): Promise<void>;
@@ -105,8 +155,11 @@ export class DatabaseStorage implements IStorage {
   // User Profile Operations
   // ============================================
   
-  async getUserProfile(): Promise<UserProfile> {
-    const [profile] = await db.select().from(userProfiles).limit(1);
+  async getUserProfile(userId: string): Promise<UserProfile> {
+    const [profile] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
     
     if (!profile) {
       return defaultUserProfile;
@@ -132,10 +185,14 @@ export class DatabaseStorage implements IStorage {
     };
   }
   
-  async saveUserProfile(profile: UserProfile): Promise<UserProfile> {
-    const [existing] = await db.select().from(userProfiles).limit(1);
+  async saveUserProfile(userId: string, profile: UserProfile): Promise<UserProfile> {
+    const [existing] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
     
     const data = {
+      userId,
       senderName: profile.senderName,
       senderTitle: profile.senderTitle || null,
       senderEmail: profile.senderEmail || null,
@@ -156,12 +213,260 @@ export class DatabaseStorage implements IStorage {
     };
     
     if (existing) {
-      await db.update(userProfiles).set(data).where(eq(userProfiles.id, existing.id));
+      await db.update(userProfiles)
+        .set(data)
+        .where(eq(userProfiles.id, existing.id));
     } else {
       await db.insert(userProfiles).values(data);
     }
     
     return profile;
+  }
+
+  // ============================================
+  // Subscription Operations
+  // ============================================
+
+  async getSubscriptionInfo(userId: string): Promise<UserSubscription> {
+    const [profile] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    if (!profile) {
+      return defaultUserSubscription;
+    }
+    
+    return {
+      subscriptionTier: profile.subscriptionTier as SubscriptionTier,
+      emailsUsedThisMonth: profile.emailsUsedThisMonth,
+      emailsUsedThisMonthResetAt: profile.emailsUsedThisMonthResetAt,
+      subscriptionStartsAt: profile.subscriptionStartsAt,
+      subscriptionEndsAt: profile.subscriptionEndsAt,
+      stripeCustomerId: profile.stripeCustomerId,
+      stripeSubscriptionId: profile.stripeSubscriptionId,
+      freeTrialStartedAt: profile.freeTrialStartedAt,
+      freeTrialEndsAt: profile.freeTrialEndsAt,
+    };
+  }
+
+  async incrementEmailUsage(userId: string): Promise<void> {
+    const [profile] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    if (!profile) {
+      // Create a new profile with initial email usage
+      await db.insert(userProfiles).values({
+        userId,
+        senderName: "",
+        companyName: "",
+        emailsUsedThisMonth: 1,
+        emailsUsedThisMonthResetAt: new Date(),
+      });
+      return;
+    }
+    
+    // Check if we need to reset the monthly counter
+    const now = new Date();
+    const resetAt = profile.emailsUsedThisMonthResetAt;
+    const shouldReset = resetAt && (
+      now.getMonth() !== resetAt.getMonth() || 
+      now.getFullYear() !== resetAt.getFullYear()
+    );
+    
+    if (shouldReset) {
+      await db.update(userProfiles)
+        .set({ 
+          emailsUsedThisMonth: 1,
+          emailsUsedThisMonthResetAt: now,
+          updatedAt: now,
+        })
+        .where(eq(userProfiles.id, profile.id));
+    } else {
+      await db.update(userProfiles)
+        .set({ 
+          emailsUsedThisMonth: profile.emailsUsedThisMonth + 1,
+          updatedAt: now,
+        })
+        .where(eq(userProfiles.id, profile.id));
+    }
+  }
+
+  async checkEmailLimit(userId: string): Promise<{ allowed: boolean; used: number; limit: number; tier: SubscriptionTier }> {
+    const subscription = await this.getSubscriptionInfo(userId);
+    const tier = subscription.subscriptionTier as SubscriptionTier;
+    const limits = SUBSCRIPTION_LIMITS[tier];
+    
+    // Check if we need to reset the monthly counter
+    const now = new Date();
+    const resetAt = subscription.emailsUsedThisMonthResetAt;
+    const shouldReset = resetAt && (
+      now.getMonth() !== resetAt.getMonth() || 
+      now.getFullYear() !== resetAt.getFullYear()
+    );
+    
+    const used = shouldReset ? 0 : subscription.emailsUsedThisMonth;
+    const limit = limits.emailsPerMonth;
+    const allowed = used < limit;
+    
+    return { allowed, used, limit, tier };
+  }
+
+  async resetMonthlyUsage(userId: string): Promise<void> {
+    await db.update(userProfiles)
+      .set({ 
+        emailsUsedThisMonth: 0,
+        emailsUsedThisMonthResetAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(userProfiles.userId, userId));
+  }
+
+  async updateSubscriptionTier(
+    userId: string, 
+    tier: SubscriptionTier, 
+    stripeData?: { customerId?: string; subscriptionId?: string; startsAt?: Date; endsAt?: Date }
+  ): Promise<void> {
+    const [existing] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    const updateData: Record<string, unknown> = {
+      subscriptionTier: tier,
+      updatedAt: new Date(),
+    };
+    
+    if (stripeData?.customerId) {
+      updateData.stripeCustomerId = stripeData.customerId;
+    }
+    if (stripeData?.subscriptionId) {
+      updateData.stripeSubscriptionId = stripeData.subscriptionId;
+    }
+    if (stripeData?.startsAt) {
+      updateData.subscriptionStartsAt = stripeData.startsAt;
+    }
+    if (stripeData?.endsAt) {
+      updateData.subscriptionEndsAt = stripeData.endsAt;
+    }
+    
+    if (existing) {
+      await db.update(userProfiles)
+        .set(updateData)
+        .where(eq(userProfiles.id, existing.id));
+    } else {
+      await db.insert(userProfiles).values({
+        userId,
+        senderName: "",
+        companyName: "",
+        subscriptionTier: tier,
+        ...stripeData?.customerId && { stripeCustomerId: stripeData.customerId },
+        ...stripeData?.subscriptionId && { stripeSubscriptionId: stripeData.subscriptionId },
+        ...stripeData?.startsAt && { subscriptionStartsAt: stripeData.startsAt },
+        ...stripeData?.endsAt && { subscriptionEndsAt: stripeData.endsAt },
+      });
+    }
+  }
+
+  // ============================================
+  // Free Trial Operations
+  // ============================================
+
+  async checkFreeTrialStatus(userId: string): Promise<FreeTrialStatus> {
+    const [profile] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    const defaultStatus: FreeTrialStatus = {
+      isActive: false,
+      startedAt: null,
+      endsAt: null,
+      daysRemaining: 0,
+      hasExpired: false,
+    };
+    
+    if (!profile) {
+      return defaultStatus;
+    }
+    
+    // If user has a paid subscription, free trial doesn't apply
+    if (profile.subscriptionTier !== "free") {
+      return {
+        isActive: false,
+        startedAt: profile.freeTrialStartedAt,
+        endsAt: profile.freeTrialEndsAt,
+        daysRemaining: 0,
+        hasExpired: !!profile.freeTrialEndsAt,
+      };
+    }
+    
+    // Check if trial exists and is active
+    if (!profile.freeTrialStartedAt || !profile.freeTrialEndsAt) {
+      return defaultStatus;
+    }
+    
+    const now = new Date();
+    const endsAt = new Date(profile.freeTrialEndsAt);
+    const isActive = now < endsAt;
+    const hasExpired = now >= endsAt;
+    
+    // Calculate days remaining
+    const msRemaining = endsAt.getTime() - now.getTime();
+    const daysRemaining = isActive ? Math.ceil(msRemaining / (1000 * 60 * 60 * 24)) : 0;
+    
+    return {
+      isActive,
+      startedAt: profile.freeTrialStartedAt,
+      endsAt: profile.freeTrialEndsAt,
+      daysRemaining,
+      hasExpired,
+    };
+  }
+
+  async startFreeTrial(userId: string): Promise<FreeTrialStatus> {
+    const now = new Date();
+    const endsAt = new Date(now);
+    endsAt.setDate(endsAt.getDate() + FREE_TRIAL_DAYS);
+    
+    const [existing] = await db.select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    
+    if (existing) {
+      // Only start trial if user hasn't had one before
+      if (existing.freeTrialStartedAt) {
+        return this.checkFreeTrialStatus(userId);
+      }
+      
+      await db.update(userProfiles)
+        .set({
+          freeTrialStartedAt: now,
+          freeTrialEndsAt: endsAt,
+          updatedAt: now,
+        })
+        .where(eq(userProfiles.id, existing.id));
+    } else {
+      // Create new profile with free trial
+      await db.insert(userProfiles).values({
+        userId,
+        senderName: "",
+        companyName: "",
+        freeTrialStartedAt: now,
+        freeTrialEndsAt: endsAt,
+      });
+    }
+    
+    return {
+      isActive: true,
+      startedAt: now,
+      endsAt,
+      daysRemaining: FREE_TRIAL_DAYS,
+      hasExpired: false,
+    };
   }
 
   // ============================================
@@ -219,8 +524,13 @@ export class DatabaseStorage implements IStorage {
   // CRM Operations
   // ============================================
 
-  async getCrmConnections(): Promise<CrmConnection[]> {
-    const connections = await db.select().from(crmConnections).where(eq(crmConnections.isActive, "true"));
+  async getCrmConnections(userId: string): Promise<CrmConnection[]> {
+    const connections = await db.select()
+      .from(crmConnections)
+      .where(and(
+        eq(crmConnections.userId, userId),
+        eq(crmConnections.isActive, "true")
+      ));
     
     return connections.map(c => ({
       id: c.id,
@@ -231,10 +541,13 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getCrmConnection(provider: CrmProvider): Promise<CrmConnection | null> {
+  async getCrmConnection(userId: string, provider: CrmProvider | string): Promise<CrmConnectionFull | null> {
     const [connection] = await db.select()
       .from(crmConnections)
-      .where(eq(crmConnections.provider, provider))
+      .where(and(
+        eq(crmConnections.userId, userId),
+        eq(crmConnections.provider, provider)
+      ))
       .limit(1);
     
     if (!connection) return null;
@@ -245,27 +558,38 @@ export class DatabaseStorage implements IStorage {
       accountName: connection.accountName,
       isActive: connection.isActive === "true",
       lastSyncAt: connection.lastSyncAt,
+      accessToken: connection.accessToken,
+      refreshToken: connection.refreshToken,
+      instanceUrl: connection.accountId, // Using accountId to store instance URL for Salesforce
     };
   }
 
-  async saveCrmConnection(provider: CrmProvider, data: {
+  async saveCrmConnection(userId: string, provider: CrmProvider | string, data: {
     accessToken?: string;
     refreshToken?: string;
     tokenExpiresAt?: Date;
     accountId?: string;
     accountName?: string;
+    instanceUrl?: string;
   }): Promise<CrmConnection> {
     const [existing] = await db.select()
       .from(crmConnections)
-      .where(eq(crmConnections.provider, provider))
+      .where(and(
+        eq(crmConnections.userId, userId),
+        eq(crmConnections.provider, provider)
+      ))
       .limit(1);
     
+    // For Salesforce, store instanceUrl in accountId field
+    const accountIdValue = data.instanceUrl || data.accountId || null;
+    
     const connectionData = {
+      userId,
       provider,
       accessToken: data.accessToken || null,
       refreshToken: data.refreshToken || null,
       tokenExpiresAt: data.tokenExpiresAt || null,
-      accountId: data.accountId || null,
+      accountId: accountIdValue,
       accountName: data.accountName || null,
       isActive: "true",
       updatedAt: new Date(),
@@ -292,10 +616,13 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async disconnectCrm(provider: CrmProvider): Promise<void> {
+  async disconnectCrm(userId: string, provider: CrmProvider | string): Promise<void> {
     await db.update(crmConnections)
       .set({ isActive: "false", updatedAt: new Date() })
-      .where(eq(crmConnections.provider, provider));
+      .where(and(
+        eq(crmConnections.userId, userId),
+        eq(crmConnections.provider, provider)
+      ));
   }
 
   // ============================================
@@ -325,13 +652,143 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(prospects.createdAt));
   }
 
+  async getProspectById(id: number): Promise<ProspectRecord | null> {
+    const [result] = await db.select()
+      .from(prospects)
+      .where(eq(prospects.id, id))
+      .limit(1);
+    
+    return result || null;
+  }
+
+  // ============================================
+  // Email Activity Operations
+  // ============================================
+
+  async saveEmailActivity(data: SaveEmailActivityInput): Promise<EmailActivityRecord> {
+    // First, try to find a matching prospect by email for this user
+    const [prospect] = await db.select()
+      .from(prospects)
+      .where(and(
+        eq(prospects.userId, data.userId),
+        eq(prospects.email, data.prospectEmail)
+      ))
+      .limit(1);
+    
+    const [activity] = await db.insert(emailActivities)
+      .values({
+        userId: data.userId,
+        prospectId: prospect?.id ?? null, // Null if no matching prospect found
+        subject: data.subject,
+        body: data.body,
+        tone: data.tone,
+        length: data.length,
+        status: data.status,
+        emailProvider: data.emailProvider || null,
+      })
+      .returning();
+    
+    return activity;
+  }
+
+  async getEmailActivities(userId: string, limit: number = 50, offset: number = 0, status?: string): Promise<EmailActivityRecord[]> {
+    if (status) {
+      return db.select()
+        .from(emailActivities)
+        .where(and(
+          eq(emailActivities.userId, userId),
+          eq(emailActivities.status, status)
+        ))
+        .orderBy(desc(emailActivities.createdAt))
+        .limit(limit)
+        .offset(offset);
+    }
+    
+    return db.select()
+      .from(emailActivities)
+      .where(eq(emailActivities.userId, userId))
+      .orderBy(desc(emailActivities.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getEmailActivity(userId: string, id: number): Promise<EmailActivityRecord | null> {
+    const [activity] = await db.select()
+      .from(emailActivities)
+      .where(and(
+        eq(emailActivities.userId, userId),
+        eq(emailActivities.id, id)
+      ))
+      .limit(1);
+    
+    return activity || null;
+  }
+
+  async updateEmailActivityStatus(userId: string, prospectEmail: string, subject: string, status: string, provider?: string): Promise<void> {
+    // Find the most recent email activity matching userId, subject, and prospect email
+    // Join with prospects to match by email address
+    const activitiesWithProspect = await db.select({
+      activity: emailActivities
+    })
+      .from(emailActivities)
+      .leftJoin(prospects, eq(emailActivities.prospectId, prospects.id))
+      .where(and(
+        eq(emailActivities.userId, userId),
+        eq(emailActivities.subject, subject),
+        // Match either via prospect email or if no prospect, any matching subject
+        prospects.email ? eq(prospects.email, prospectEmail) : undefined
+      ))
+      .orderBy(desc(emailActivities.createdAt))
+      .limit(1);
+    
+    // If no match with prospect, try matching just by userId and subject (for emails without linked prospect)
+    let activityId: number | null = activitiesWithProspect[0]?.activity.id ?? null;
+    
+    if (!activityId) {
+      const [fallbackActivity] = await db.select()
+        .from(emailActivities)
+        .where(and(
+          eq(emailActivities.userId, userId),
+          eq(emailActivities.subject, subject)
+        ))
+        .orderBy(desc(emailActivities.createdAt))
+        .limit(1);
+      
+      activityId = fallbackActivity?.id ?? null;
+    }
+    
+    if (activityId) {
+      await db.update(emailActivities)
+        .set({ 
+          status, 
+          sentAt: status === "sent" ? new Date() : undefined,
+          emailProvider: provider || undefined,
+        })
+        .where(eq(emailActivities.id, activityId));
+    }
+  }
+
+  async updateEmailActivityStatusById(userId: string, id: number, status: string): Promise<void> {
+    // Only update if the activity belongs to the user
+    await db.update(emailActivities)
+      .set({ 
+        status, 
+        sentAt: status === "sent" ? new Date() : undefined,
+      })
+      .where(and(
+        eq(emailActivities.userId, userId),
+        eq(emailActivities.id, id)
+      ));
+  }
+
   // ============================================
   // Sequence Operations
   // ============================================
 
-  async createSequence(data: CreateSequenceRequest): Promise<SequenceWithSteps> {
+  async createSequence(userId: string, data: CreateSequenceRequest): Promise<SequenceWithSteps> {
     const [sequence] = await db.insert(sequences)
       .values({
+        userId,
         name: data.name,
         description: data.description || null,
         tone: data.tone,
@@ -358,7 +815,27 @@ export class DatabaseStorage implements IStorage {
     return { ...sequence, steps };
   }
 
-  async getSequence(id: number): Promise<SequenceWithSteps | null> {
+  async getSequence(userId: string, id: number): Promise<SequenceWithSteps | null> {
+    const [sequence] = await db.select()
+      .from(sequences)
+      .where(and(
+        eq(sequences.userId, userId),
+        eq(sequences.id, id)
+      ))
+      .limit(1);
+
+    if (!sequence) return null;
+
+    const steps = await db.select()
+      .from(sequenceSteps)
+      .where(eq(sequenceSteps.sequenceId, id))
+      .orderBy(sequenceSteps.stepNumber);
+
+    return { ...sequence, steps };
+  }
+
+  // Internal method - no userId check (for background processing like scheduler)
+  async getSequenceById(id: number): Promise<SequenceWithSteps | null> {
     const [sequence] = await db.select()
       .from(sequences)
       .where(eq(sequences.id, id))
@@ -374,33 +851,43 @@ export class DatabaseStorage implements IStorage {
     return { ...sequence, steps };
   }
 
-  async getAllSequences(): Promise<SequenceRecord[]> {
+  async getAllSequences(userId: string): Promise<SequenceRecord[]> {
     return db.select()
       .from(sequences)
+      .where(eq(sequences.userId, userId))
       .orderBy(desc(sequences.createdAt));
   }
 
-  async updateSequence(id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null> {
+  async updateSequence(userId: string, id: number, data: Partial<InsertSequence>): Promise<SequenceRecord | null> {
     const [updated] = await db.update(sequences)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(sequences.id, id))
+      .where(and(
+        eq(sequences.userId, userId),
+        eq(sequences.id, id)
+      ))
       .returning();
     
     return updated || null;
   }
 
-  async updateSequenceStatus(id: number, status: SequenceStatus): Promise<SequenceRecord | null> {
+  async updateSequenceStatus(userId: string, id: number, status: SequenceStatus): Promise<SequenceRecord | null> {
     const [updated] = await db.update(sequences)
       .set({ status, updatedAt: new Date() })
-      .where(eq(sequences.id, id))
+      .where(and(
+        eq(sequences.userId, userId),
+        eq(sequences.id, id)
+      ))
       .returning();
     
     return updated || null;
   }
 
-  async deleteSequence(id: number): Promise<boolean> {
+  async deleteSequence(userId: string, id: number): Promise<boolean> {
     const result = await db.delete(sequences)
-      .where(eq(sequences.id, id))
+      .where(and(
+        eq(sequences.userId, userId),
+        eq(sequences.id, id)
+      ))
       .returning();
     
     return result.length > 0;
@@ -480,6 +967,15 @@ export class DatabaseStorage implements IStorage {
     }
 
     return result;
+  }
+
+  async getEnrollmentById(id: number): Promise<SequenceEnrollmentRecord | null> {
+    const [result] = await db.select()
+      .from(sequenceEnrollments)
+      .where(eq(sequenceEnrollments.id, id))
+      .limit(1);
+    
+    return result || null;
   }
 
   async getEnrollmentsByProspect(prospectId: number): Promise<SequenceEnrollmentRecord[]> {

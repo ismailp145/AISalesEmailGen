@@ -68,7 +68,8 @@ Preferred communication style: Simple, everyday language.
 
 **Core API Endpoints:**
 - `POST /api/generate-email` - Single prospect email generation (automatically uses user profile for context, optionally includes selected triggers)
-- `POST /api/detect-triggers` - AI-powered trigger detection for a prospect (finds news, LinkedIn activity, company events, etc.)
+- `POST /api/detect-triggers` - AI-powered trigger detection for a prospect (finds news, LinkedIn activity, company events, etc.; enhanced with FireCrawl for real website data and news)
+- `POST /api/profile/auto-fill` - Auto-fill user profile from company website using FireCrawl and AI extraction
 - `POST /api/generate-emails-bulk` - Batch email generation for multiple prospects
 - `GET /api/profile` - Retrieve user profile data
 - `POST /api/profile` - Save/update user profile data
