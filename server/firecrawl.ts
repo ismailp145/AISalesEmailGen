@@ -1,16 +1,32 @@
-import Firecrawl from "@mendable/firecrawl-js";
+// Use dynamic import to avoid bundling issues with ESM packages
+let Firecrawl: any = null;
+let firecrawl: any = null;
 
-// Initialize Firecrawl client
-const firecrawlApiKey = process.env.FIRECRAWL_API_KEY;
-
-let firecrawl: Firecrawl | null = null;
-
-if (firecrawlApiKey) {
-  firecrawl = new Firecrawl({ apiKey: firecrawlApiKey });
-  console.log("[Firecrawl] Initialized with API key");
-} else {
-  console.log("[Firecrawl] API key not configured - web scraping features disabled");
+// Initialize Firecrawl client lazily
+async function initializeFirecrawl() {
+  if (Firecrawl) return; // Already initialized
+  
+  try {
+    const firecrawlModule = await import("@mendable/firecrawl-js");
+    Firecrawl = firecrawlModule.default || firecrawlModule;
+    
+    const firecrawlApiKey = process.env.FIRECRAWL_API_KEY;
+    if (firecrawlApiKey) {
+      firecrawl = new Firecrawl({ apiKey: firecrawlApiKey });
+      console.log("[Firecrawl] Initialized with API key");
+    } else {
+      console.log("[Firecrawl] API key not configured - web scraping features disabled");
+    }
+  } catch (error) {
+    console.error("[Firecrawl] Failed to load module:", error);
+    firecrawl = null;
+  }
 }
+
+// Initialize on module load (but don't block)
+initializeFirecrawl().catch(err => {
+  console.error("[Firecrawl] Initialization error:", err);
+});
 
 export function isFirecrawlConfigured(): boolean {
   return !!firecrawl;
@@ -39,6 +55,7 @@ export interface CompanyWebsiteData {
  * @returns Structured company data from the website
  */
 export async function scrapeCompanyWebsite(url: string): Promise<CompanyWebsiteData> {
+  await initializeFirecrawl();
   if (!firecrawl) {
     throw new Error("Firecrawl is not configured. Please set FIRECRAWL_API_KEY.");
   }
@@ -101,6 +118,7 @@ export async function searchCompanyNews(
   companyName: string,
   limit: number = 5
 ): Promise<CompanyNewsSearchResult> {
+  await initializeFirecrawl();
   if (!firecrawl) {
     throw new Error("Firecrawl is not configured. Please set FIRECRAWL_API_KEY.");
   }
@@ -182,6 +200,7 @@ export async function researchCompany(
   websiteData?: CompanyWebsiteData;
   newsData: CompanyNewsSearchResult;
 }> {
+  await initializeFirecrawl();
   if (!firecrawl) {
     throw new Error("Firecrawl is not configured. Please set FIRECRAWL_API_KEY.");
   }
@@ -322,6 +341,7 @@ function determineRelevance(
  * @returns Comprehensive website content for AI analysis
  */
 export async function crawlCompanyWebsite(url: string): Promise<string> {
+  await initializeFirecrawl();
   if (!firecrawl) {
     throw new Error("Firecrawl is not configured. Please set FIRECRAWL_API_KEY.");
   }
