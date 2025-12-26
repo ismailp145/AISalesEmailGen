@@ -28,9 +28,8 @@
 
 - ✅ `client/src/lib/queryClient.ts` - Now uses `VITE_API_URL`
 - ✅ `vercel.json` - Frontend-only deployment
-- ✅ `railway.json` - Railway configuration
-- ✅ `nixpacks.toml` - Build configuration
-- ✅ `.railwayignore` - Ignore frontend files
+- ✅ `.railwayignore` - Ignore frontend files from backend build
+- ✅ `RAILWAY_SETUP.md` - Railway configuration guide (if needed)
 
 ## What's Different?
 
