@@ -133,7 +133,8 @@ app.use((req, res, next) => {
   next();
 });
 
-(async () => {
+// Initialize the app (register routes, setup static serving, etc.)
+async function initializeApp() {
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -153,21 +154,53 @@ app.use((req, res, next) => {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
   }
+}
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 3000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "3000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      // reusePort: true, // uncomment this to enable port reuse
-    },
-    () => {
-      log(`serving on port ${port}`);
-      console.log(`view at http://localhost:${port}`);
-    },
-  );
-})();
+// Initialize app immediately (synchronously start the async init)
+// This ensures routes are registered before the app is exported
+let initPromise: Promise<void> | null = null;
+
+function ensureInitialized() {
+  if (!initPromise) {
+    initPromise = initializeApp().catch((err) => {
+      console.error("Failed to initialize app:", err);
+      throw err;
+    });
+  }
+  return initPromise;
+}
+
+// Start initialization immediately
+ensureInitialized();
+
+// Check if we're running on Vercel
+const isVercel = !!process.env.VERCEL;
+
+if (!isVercel) {
+  // Local development: wait for initialization and start the server
+  (async () => {
+    await ensureInitialized();
+
+    // ALWAYS serve the app on the port specified in the environment variable PORT
+    // Other ports are firewalled. Default to 3000 if not specified.
+    // this serves both the API and the client.
+    // It is the only port that is not firewalled.
+    const port = parseInt(process.env.PORT || "3000", 10);
+    httpServer.listen(
+      {
+        port,
+        host: "0.0.0.0",
+        // reusePort: true, // uncomment this to enable port reuse
+      },
+      () => {
+        log(`serving on port ${port}`);
+        console.log(`view at http://localhost:${port}`);
+      },
+    );
+  })();
+}
+
+// Export the app for Vercel serverless functions
+// On Vercel, initialization will happen when the module is first loaded
+// Vercel will wait for the promise to resolve before handling requests
+export default app;
