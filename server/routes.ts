@@ -820,6 +820,7 @@ export async function registerRoutes(
 
   // Auto-fill profile from company website
   app.post("/api/profile/auto-fill", async (req, res) => {
+    console.log("[API] POST /api/profile/auto-fill - Request received");
     try {
       const aiStatus = checkAIIntegration();
       if (!aiStatus.configured) {
