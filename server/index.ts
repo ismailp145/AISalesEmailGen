@@ -271,8 +271,18 @@ if (!isVercel) {
 }
 
 // Graceful shutdown handlers
-const gracefulShutdown = (signal: string) => {
+const gracefulShutdown = async (signal: string) => {
   console.log(`\n[Shutdown] Received ${signal}. Gracefully shutting down...`);
+  
+  // Close Redis client first if it exists
+  if (redisClient) {
+    try {
+      await redisClient.quit();
+      console.log("[Shutdown] Redis client disconnected successfully.");
+    } catch (err) {
+      console.error("[Shutdown] Error disconnecting Redis client:", err);
+    }
+  }
   
   httpServer.close((err) => {
     if (err) {
@@ -291,8 +301,8 @@ const gracefulShutdown = (signal: string) => {
   }, 10000);
 };
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
 
 // Export the app for Vercel serverless functions
 // On Vercel, initialization will happen when the module is first loaded
