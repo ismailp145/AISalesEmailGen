@@ -33,8 +33,8 @@ export function serveStatic(app: Express) {
   console.log(`[Static] Serving static files from: ${publicPath}`);
   console.log(`[Static] index.html exists: ${fs.existsSync(path.resolve(publicPath, "index.html"))}`);
 
-  // Serve static files with proper content-type headers
-  app.use(express.static(publicPath, {
+  // Create static middleware once (more efficient)
+  const staticMiddleware = express.static(publicPath, {
     setHeaders: (res, filePath) => {
       // Ensure HTML files are served with correct content-type
       if (filePath.endsWith('.html')) {
@@ -49,13 +49,31 @@ export function serveStatic(app: Express) {
         res.setHeader('Content-Type', 'text/css; charset=utf-8');
       }
     }
-  }));
+  });
+
+  // Serve static files with proper content-type headers
+  // IMPORTANT: Exclude API routes from static file serving to prevent 405 errors
+  app.use((req, res, next) => {
+    // Skip static middleware for API routes
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    // Use static middleware for all other routes
+    staticMiddleware(req, res, next);
+  });
 
   // Fall through to index.html for client-side routing
   // This must be after all API routes are registered
   app.use("*", (_req, res, next) => {
     // Skip if this is an API route (should have been handled already)
+    // If an API route reaches here, it means it wasn't found - return 404
     if (_req.path.startsWith('/api/')) {
+      if (!res.headersSent) {
+        return res.status(404).json({
+          error: "Not found",
+          message: `API endpoint ${_req.method} ${_req.path} not found`
+        });
+      }
       return next();
     }
     
