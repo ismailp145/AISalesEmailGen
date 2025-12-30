@@ -59,12 +59,13 @@ function sanitizeError(error: unknown): { message: string; code?: string } {
       return { message: error.message };
     }
     
-    // Check for common error patterns that are safe
-    if (error.message.includes("not found") || error.message.includes("Not found")) {
-      return { message: "Resource not found" };
-    }
+    // Normalize message for pattern checks
+    const normalizedMessage = error.message.toLowerCase();
     
-    if (error.message.includes("validation") || error.message.includes("Invalid")) {
+    // Check for common error patterns that are safe
+    if (normalizedMessage.includes("not found")) {
+      return { message: "Resource not found" };
+    } else if (normalizedMessage.includes("validation") || normalizedMessage.includes("invalid")) {
       return { message: "Invalid request data" };
     }
     
