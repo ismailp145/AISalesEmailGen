@@ -107,6 +107,13 @@ export function validateEnvironment(): EnvValidationResult {
       warnings.push('CORS_ORIGIN not set in production - this is a security risk');
     }
 
+    // Check OAuth host validation configuration
+    const hasAllowedHosts = process.env.ALLOWED_HOSTS && process.env.ALLOWED_HOSTS.trim().length > 0;
+    const hasCorsOrigin = process.env.CORS_ORIGIN && process.env.CORS_ORIGIN.trim().length > 0;
+    if (!hasAllowedHosts && !hasCorsOrigin) {
+      errors.push('OAuth redirect validation requires ALLOWED_HOSTS or CORS_ORIGIN in production. Set at least one to secure OAuth redirects.');
+    }
+
     // Check for rate limiting configuration
     if (!process.env.RATE_LIMIT_WINDOW_MS && !process.env.RATE_LIMIT_MAX_REQUESTS) {
       warnings.push('Rate limiting not configured - consider adding for production');
