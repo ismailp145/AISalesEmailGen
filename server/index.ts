@@ -86,57 +86,76 @@ if (process.env.CLERK_SECRET_KEY) {
   const isProduction = process.env.NODE_ENV === "production";
   const sessionSecret = process.env.SESSION_SECRET || DEV_SESSION_SECRET;
   
-  // Configure session store
-  let store: session.Store;
-  
-  if (isProduction && process.env.REDIS_URL) {
-    // Production: Use Redis for session storage
-    redisClient = createClient({
-      url: process.env.REDIS_URL,
-    });
+  // Configure session store (async setup wrapped in IIFE to avoid top-level await)
+  (async () => {
+    let store: session.Store;
     
-    redisClient.on("error", (err) => {
-      console.error("[Redis] Session store error:", err);
-    });
-    
-    redisClient.on("connect", () => {
-      console.log("[Redis] Session store connected");
-    });
-    
-    // Connect Redis client and only use RedisStore if connection succeeds
-    try {
-      await redisClient.connect();
-      store = new RedisStore({ client: redisClient });
-      console.log("[Auth] Using Redis session store");
-    } catch (err) {
-      console.error("[Redis] Failed to connect, falling back to MemoryStore:", err);
+    if (isProduction && process.env.REDIS_URL) {
+      // Production: Use Redis for session storage
+      redisClient = createClient({
+        url: process.env.REDIS_URL,
+      });
+      
+      redisClient.on("error", (err) => {
+        console.error("[Redis] Session store error:", err);
+      });
+      
+      redisClient.on("connect", () => {
+        console.log("[Redis] Session store connected");
+      });
+      
+      // Connect Redis client and only use RedisStore if connection succeeds
+      try {
+        await redisClient.connect();
+        store = new RedisStore({ client: redisClient });
+        console.log("[Auth] Using Redis session store");
+      } catch (err) {
+        console.error("[Redis] Failed to connect, falling back to MemoryStore:", err);
+        store = new MemoryStore({ checkPeriod: 86400000 });
+        console.warn("[Auth] ⚠️ Using MemoryStore because Redis connection failed - sessions will not be persisted across restarts");
+      }
+    } else {
+      // Development: Use memory store
       store = new MemoryStore({ checkPeriod: 86400000 });
-      console.warn("[Auth] ⚠️ Using MemoryStore because Redis connection failed - sessions will not be persisted across restarts");
+      if (isProduction) {
+        console.warn("[Auth] ⚠️ Using MemoryStore in production - set REDIS_URL for persistence");
+      }
     }
-  } else {
-    // Development: Use memory store
-    store = new MemoryStore({ checkPeriod: 86400000 });
-    if (isProduction) {
-      console.warn("[Auth] ⚠️ Using MemoryStore in production - set REDIS_URL for persistence");
-    }
-  }
-  
-  app.use(
-    session({
-      secret: sessionSecret,
-      resave: false,
-      saveUninitialized: false,
-      store,
-      cookie: {
-        secure: isProduction,
-        httpOnly: true,
-        sameSite: isProduction ? "strict" : "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      },
-    }),
-  );
+    
+    app.use(
+      session({
+        secret: sessionSecret,
+        resave: false,
+        saveUninitialized: false,
+        store,
+        cookie: {
+          secure: isProduction,
+          httpOnly: true,
+          sameSite: isProduction ? "strict" : "lax",
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        },
+      }),
+    );
 
-  console.log("[Auth] Clerk not configured - running without authentication (sessions enabled)");
+    console.log("[Auth] Clerk not configured - running without authentication (sessions enabled)");
+  })().catch((err) => {
+    console.error("[Auth] Failed to setup session store:", err);
+    // Fallback to memory store on error
+    app.use(
+      session({
+        secret: sessionSecret,
+        resave: false,
+        saveUninitialized: false,
+        store: new MemoryStore({ checkPeriod: 86400000 }),
+        cookie: {
+          secure: isProduction,
+          httpOnly: true,
+          sameSite: isProduction ? "strict" : "lax",
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        },
+      }),
+    );
+  });
 }
 
 // TODO: Add rate limiting for production (uncomment after installing express-rate-limit)
