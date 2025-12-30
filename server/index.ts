@@ -103,13 +103,16 @@ if (process.env.CLERK_SECRET_KEY) {
       console.log("[Redis] Session store connected");
     });
     
-    // Connect Redis client
-    redisClient.connect().catch((err) => {
-      console.error("[Redis] Failed to connect:", err);
-    });
-    
-    store = new RedisStore({ client: redisClient });
-    console.log("[Auth] Using Redis session store");
+    // Connect Redis client and only use RedisStore if connection succeeds
+    try {
+      await redisClient.connect();
+      store = new RedisStore({ client: redisClient });
+      console.log("[Auth] Using Redis session store");
+    } catch (err) {
+      console.error("[Redis] Failed to connect, falling back to MemoryStore:", err);
+      store = new MemoryStore({ checkPeriod: 86400000 });
+      console.warn("[Auth] ⚠️ Using MemoryStore because Redis connection failed - sessions will not be persisted across restarts");
+    }
   } else {
     // Development: Use memory store
     store = new MemoryStore({ checkPeriod: 86400000 });
