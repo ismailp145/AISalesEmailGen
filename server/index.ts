@@ -218,12 +218,13 @@ async function initializeApp() {
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.NODE_ENV === "production" && !process.env.API_ONLY) {
     serveStatic(app);
-  } else {
+  } else if (process.env.NODE_ENV !== "production") {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
   }
+  // If API_ONLY is set in production, skip static serving entirely (API-only mode for Railway)
 }
 
 // Initialize app immediately (synchronously start the async init)
