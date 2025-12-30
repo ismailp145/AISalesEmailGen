@@ -1,0 +1,14 @@
+# Railway Configuration File
+# This file configures how Railway builds and deploys your backend service
+# See: https://docs.railway.com/reference/config-as-code
+
+[build]
+builder = "RAILPACK"
+buildCommand = "npm run build:backend"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+restartPolicyType = "always"
+
