@@ -45,6 +45,8 @@ const RECOMMENDED_VARS = [
 const PRODUCTION_VARS = [
   'SESSION_SECRET',
   'NODE_ENV',
+  'CLERK_SECRET_KEY',
+  'VITE_CLERK_PUBLISHABLE_KEY',
 ] as const;
 
 /**

@@ -2,23 +2,29 @@ import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
+import helmet from "helmet";
+import { createClient } from "redis";
+import { RedisStore } from "connect-redis";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { clerkAuthMiddleware, requireAuthentication } from "./middleware/clerk";
 import { DEV_SESSION_SECRET } from "./constants";
 
-// TODO: Enable for production security (see SECURITY.md and PRODUCTION_DEPLOYMENT.md)
+// Security and environment validation
 import { logEnvironmentValidation } from "./env-validation";
 import { configureCors, validateCorsConfig } from "./middleware/cors";
 import { apiLimiter, strictLimiter } from "./middleware/rate-limit";
 
-// Validate environment on startup (uncomment for production)
-// logEnvironmentValidation();
+// Validate environment on startup
+logEnvironmentValidation();
 
 const app = express();
 const httpServer = createServer(app);
 const MemoryStore = createMemoryStore(session);
+
+// Redis client for session storage (production only)
+let redisClient: ReturnType<typeof createClient> | null = null;
 
 declare module "http" {
   interface IncomingMessage {
@@ -26,23 +32,28 @@ declare module "http" {
   }
 }
 
-// TODO: Configure CORS for production (uncomment after installing cors package)
+// Configure CORS
 validateCorsConfig();
 app.use(configureCors());
 
-// TODO: Add request size limits for security (uncomment for production)
+// Security headers with helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Required for development
+      connectSrc: ["'self'", "https://api.stripe.com", "https://*.clerk.accounts.dev", "https://*.clerk.dev"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Disable for Clerk compatibility
+}));
+
+// Request body parsing with size limits for security
 app.use(express.json({ limit: '100kb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: false, limit: '100kb' }));
-
-app.use(
-  express.json({
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  }),
-);
-
-app.use(express.urlencoded({ extended: false }));
 
 // Routes that should be publicly accessible (no auth required)
 const PUBLIC_ROUTES = [
@@ -71,21 +82,58 @@ if (process.env.CLERK_SECRET_KEY) {
   
   console.log("[Auth] Clerk authentication enabled and enforced on API routes");
 } else {
-  // Enable lightweight session support in development to keep per-session context
+  // Enable session support (use Redis in production, memory store in development)
+  const isProduction = process.env.NODE_ENV === "production";
+  const sessionSecret = process.env.SESSION_SECRET || DEV_SESSION_SECRET;
+  
+  // Configure session store
+  let store: session.Store;
+  
+  if (isProduction && process.env.REDIS_URL) {
+    // Production: Use Redis for session storage
+    redisClient = createClient({
+      url: process.env.REDIS_URL,
+    });
+    
+    redisClient.on("error", (err) => {
+      console.error("[Redis] Session store error:", err);
+    });
+    
+    redisClient.on("connect", () => {
+      console.log("[Redis] Session store connected");
+    });
+    
+    // Connect Redis client
+    redisClient.connect().catch((err) => {
+      console.error("[Redis] Failed to connect:", err);
+    });
+    
+    store = new RedisStore({ client: redisClient });
+    console.log("[Auth] Using Redis session store");
+  } else {
+    // Development: Use memory store
+    store = new MemoryStore({ checkPeriod: 86400000 });
+    if (isProduction) {
+      console.warn("[Auth] ⚠️ Using MemoryStore in production - set REDIS_URL for persistence");
+    }
+  }
+  
   app.use(
     session({
-      secret: DEV_SESSION_SECRET,
+      secret: sessionSecret,
       resave: false,
       saveUninitialized: false,
-      store: new MemoryStore({ checkPeriod: 86400000 }),
+      store,
       cookie: {
-        secure: false,
+        secure: isProduction,
+        httpOnly: true,
+        sameSite: isProduction ? "strict" : "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       },
     }),
   );
 
-  console.log("[Auth] Clerk not configured - running without authentication (dev sessions enabled)");
+  console.log("[Auth] Clerk not configured - running without authentication (sessions enabled)");
 }
 
 // TODO: Add rate limiting for production (uncomment after installing express-rate-limit)
@@ -199,6 +247,30 @@ if (!isVercel) {
     );
   })();
 }
+
+// Graceful shutdown handlers
+const gracefulShutdown = (signal: string) => {
+  console.log(`\n[Shutdown] Received ${signal}. Gracefully shutting down...`);
+  
+  httpServer.close((err) => {
+    if (err) {
+      console.error("[Shutdown] Error closing HTTP server:", err);
+      process.exit(1);
+    }
+    
+    console.log("[Shutdown] HTTP server closed successfully.");
+    process.exit(0);
+  });
+  
+  // Force exit after 10 seconds if graceful shutdown fails
+  setTimeout(() => {
+    console.error("[Shutdown] Forced exit after timeout.");
+    process.exit(1);
+  }, 10000);
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Export the app for Vercel serverless functions
 // On Vercel, initialization will happen when the module is first loaded

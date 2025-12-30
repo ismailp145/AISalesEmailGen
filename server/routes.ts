@@ -36,6 +36,51 @@ import { z } from "zod";
 import { DEV_USER_HEADER } from "./constants";
 import { nanoid } from "nanoid";
 
+/**
+ * Sanitize error messages for client responses
+ * Prevents leaking sensitive information like stack traces or internal paths
+ */
+function sanitizeError(error: unknown): { message: string; code?: string } {
+  // Known safe error messages can be passed through
+  const safeMessages = [
+    "Invalid request",
+    "Not found",
+    "Unauthorized",
+    "Forbidden",
+    "Rate limit exceeded",
+    "Service unavailable",
+    "Email limit exceeded",
+    "Insufficient email credits",
+  ];
+
+  if (error instanceof Error) {
+    // Check if it's a safe message
+    if (safeMessages.some(msg => error.message.startsWith(msg))) {
+      return { message: error.message };
+    }
+    
+    // Check for common error patterns that are safe
+    if (error.message.includes("not found") || error.message.includes("Not found")) {
+      return { message: "Resource not found" };
+    }
+    
+    if (error.message.includes("validation") || error.message.includes("Invalid")) {
+      return { message: "Invalid request data" };
+    }
+    
+    // For production, return generic message
+    if (process.env.NODE_ENV === "production") {
+      console.error("[Error] Sanitized error:", error.message);
+      return { message: "An unexpected error occurred. Please try again." };
+    }
+    
+    // In development, allow more detail but still sanitize
+    return { message: error.message.substring(0, 200) };
+  }
+  
+  return { message: "An unexpected error occurred. Please try again." };
+}
+
 // Helper to get user ID with per-session dev fallback when Clerk is not configured.
 // This avoids sharing data across unauthenticated users by issuing a unique
 // session-scoped identifier instead of a global "anonymous" value.
@@ -79,10 +124,32 @@ const sendEmailRequestSchema = z.object({
   provider: z.enum(["sendgrid", "gmail", "outlook"]).optional().default("sendgrid"),
 });
 
-// Helper to get the base URL for OAuth redirects
+// Helper to get the base URL for OAuth redirects with host validation
 function getBaseUrl(req: any): string {
   const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+  
+  // In production, validate against allowed hosts
+  if (process.env.NODE_ENV === 'production') {
+    const allowedHosts = process.env.ALLOWED_HOSTS?.split(',').map(h => h.trim()) || [];
+    
+    // Always allow the configured CORS origins
+    const corsOrigin = process.env.CORS_ORIGIN?.split(',').map(o => {
+      try {
+        return new URL(o.trim()).host;
+      } catch {
+        return o.trim();
+      }
+    }) || [];
+    
+    const allAllowedHosts = [...allowedHosts, ...corsOrigin];
+    
+    if (allAllowedHosts.length > 0 && !allAllowedHosts.includes(host)) {
+      console.error(`[Security] OAuth redirect blocked for unauthorized host: ${host}`);
+      throw new Error('Unauthorized host for OAuth redirect');
+    }
+  }
+  
   return `${protocol}://${host}`;
 }
 
@@ -1614,16 +1681,17 @@ export async function registerRoutes(
   // Prospect Endpoints
   // ============================================
 
-  // Get all synced prospects
+  // Get all synced prospects (scoped to user)
   app.get("/api/prospects", async (req, res) => {
     try {
+      const userId = getUserIdOrDefault(req);
       const source = req.query.source as CrmProvider | undefined;
       
       let prospects;
       if (source) {
-        prospects = await storage.getProspectsByCrmSource(source);
+        prospects = await storage.getProspectsByCrmSource(userId, source);
       } else {
-        prospects = await storage.getAllProspects();
+        prospects = await storage.getAllProspects(userId);
       }
 
       return res.json(prospects);
@@ -1631,7 +1699,7 @@ export async function registerRoutes(
       console.error("Get prospects error:", error);
       return res.status(500).json({
         error: "Failed to get prospects",
-        message: error?.message || "An unexpected error occurred.",
+        ...sanitizeError(error),
       });
     }
   });
@@ -2115,7 +2183,18 @@ export async function registerRoutes(
       }
 
       const event = constructWebhookEvent(rawBody, signature);
+      
+      // Check for webhook replay attack
+      const alreadyProcessed = await storage.isWebhookProcessed(event.id);
+      if (alreadyProcessed) {
+        console.log(`[Stripe Webhook] Event ${event.id} already processed, skipping`);
+        return res.json({ received: true, status: "already_processed" });
+      }
+      
       const result = await handleWebhookEvent(event);
+      
+      // Mark webhook as processed
+      await storage.markWebhookProcessed(event.id, event.type);
 
       console.log(`[Stripe Webhook] Event: ${event.type}, Action: ${result.action}`);
 
