@@ -2190,11 +2190,20 @@ export async function registerRoutes(
         console.log(`[Stripe Webhook] Event ${event.id} already processed, skipping`);
         return res.json({ received: true, status: "already_processed" });
       }
+
+      // Mark webhook as processed before handling to avoid duplicate processing on replay
+      try {
+        await storage.markWebhookProcessed(event.id, event.type);
+      } catch (markError) {
+        console.error(
+          `[Stripe Webhook] Failed to mark event ${event.id} as processed before handling:`,
+          markError
+        );
+        // Do not process the event if we cannot reliably record it as processed.
+        return res.status(500).json({ error: "Failed to persist webhook state" });
+      }
       
       const result = await handleWebhookEvent(event);
-      
-      // Mark webhook as processed
-      await storage.markWebhookProcessed(event.id, event.type);
 
       console.log(`[Stripe Webhook] Event: ${event.type}, Action: ${result.action}`);
 
