@@ -279,8 +279,8 @@ const gracefulShutdown = async (signal: string) => {
   }, 10000);
 };
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", async () => await gracefulShutdown("SIGTERM"));
+process.on("SIGINT", async () => await gracefulShutdown("SIGINT"));
 
 // Export the app for Vercel serverless functions
 // On Vercel, initialization will happen when the module is first loaded
