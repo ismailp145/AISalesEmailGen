@@ -38,8 +38,10 @@ export function configureCors() {
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.warn(`CORS blocked request from origin: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
+        console.warn(`[CORS] Blocked request from origin: ${origin}`);
+        console.warn(`[CORS] Allowed origins: ${allowedOrigins.join(', ')}`);
+        console.warn(`[CORS] To fix: Add ${origin} to CORS_ORIGIN environment variable in Railway`);
+        callback(new Error(`Not allowed by CORS. Origin ${origin} is not in allowed list. Add it to CORS_ORIGIN environment variable.`));
       }
     },
     credentials: true, // Allow cookies and authorization headers
