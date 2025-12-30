@@ -45,6 +45,8 @@ const RECOMMENDED_VARS = [
 const PRODUCTION_VARS = [
   'SESSION_SECRET',
   'NODE_ENV',
+  'CLERK_SECRET_KEY',
+  'VITE_CLERK_PUBLISHABLE_KEY',
 ] as const;
 
 /**
@@ -103,6 +105,13 @@ export function validateEnvironment(): EnvValidationResult {
     // Check CORS configuration
     if (!process.env.CORS_ORIGIN) {
       warnings.push('CORS_ORIGIN not set in production - this is a security risk');
+    }
+
+    // Check OAuth host validation configuration
+    const hasAllowedHosts = process.env.ALLOWED_HOSTS && process.env.ALLOWED_HOSTS.trim().length > 0;
+    const hasCorsOrigin = process.env.CORS_ORIGIN && process.env.CORS_ORIGIN.trim().length > 0;
+    if (!hasAllowedHosts && !hasCorsOrigin) {
+      errors.push('OAuth redirect validation requires ALLOWED_HOSTS or CORS_ORIGIN in production. Set at least one to secure OAuth redirects.');
     }
 
     // Check for rate limiting configuration

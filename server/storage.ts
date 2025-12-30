@@ -10,6 +10,7 @@ import {
   sequenceSteps,
   sequenceEnrollments,
   scheduledEmails,
+  processedWebhooks,
   SUBSCRIPTION_LIMITS,
   FREE_TRIAL_DAYS,
   type UserProfile,
@@ -105,8 +106,8 @@ export interface IStorage {
   
   // Prospect database operations (for CRM sync)
   saveProspects(prospects: InsertProspect[]): Promise<ProspectRecord[]>;
-  getProspectsByCrmSource(source: CrmProvider): Promise<ProspectRecord[]>;
-  getAllProspects(): Promise<ProspectRecord[]>;
+  getProspectsByCrmSource(userId: string, source: CrmProvider): Promise<ProspectRecord[]>;
+  getAllProspects(userId: string): Promise<ProspectRecord[]>;
   getProspectById(id: number): Promise<ProspectRecord | null>;
   
   // Email activity operations
@@ -145,6 +146,10 @@ export interface IStorage {
   createScheduledEmail(data: InsertScheduledEmail): Promise<ScheduledEmailRecord>;
   updateScheduledEmailStatus(id: number, status: string, error?: string): Promise<void>;
   cancelScheduledEmails(enrollmentId: number): Promise<void>;
+  
+  // Webhook replay protection
+  isWebhookProcessed(eventId: string): Promise<boolean>;
+  markWebhookProcessed(eventId: string, eventType: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -639,16 +644,20 @@ export class DatabaseStorage implements IStorage {
     return saved;
   }
 
-  async getProspectsByCrmSource(source: CrmProvider): Promise<ProspectRecord[]> {
+  async getProspectsByCrmSource(userId: string, source: CrmProvider): Promise<ProspectRecord[]> {
     return db.select()
       .from(prospects)
-      .where(eq(prospects.crmSource, source))
+      .where(and(
+        eq(prospects.userId, userId),
+        eq(prospects.crmSource, source)
+      ))
       .orderBy(desc(prospects.createdAt));
   }
 
-  async getAllProspects(): Promise<ProspectRecord[]> {
+  async getAllProspects(userId: string): Promise<ProspectRecord[]> {
     return db.select()
       .from(prospects)
+      .where(eq(prospects.userId, userId))
       .orderBy(desc(prospects.createdAt));
   }
 
@@ -1073,6 +1082,25 @@ export class DatabaseStorage implements IStorage {
         eq(scheduledEmails.enrollmentId, enrollmentId),
         eq(scheduledEmails.status, "scheduled")
       ));
+  }
+
+  // ============================================
+  // Webhook Replay Protection
+  // ============================================
+
+  async isWebhookProcessed(eventId: string): Promise<boolean> {
+    const [result] = await db.select()
+      .from(processedWebhooks)
+      .where(eq(processedWebhooks.eventId, eventId))
+      .limit(1);
+    
+    return !!result;
+  }
+
+  async markWebhookProcessed(eventId: string, eventType: string): Promise<void> {
+    await db.insert(processedWebhooks)
+      .values({ eventId, eventType })
+      .onConflictDoNothing();
   }
 }
 

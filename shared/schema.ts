@@ -168,6 +168,14 @@ export const scheduledEmails = pgTable("scheduled_emails", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Processed webhooks table - for replay attack protection
+export const processedWebhooks = pgTable("processed_webhooks", {
+  id: serial("id").primaryKey(),
+  eventId: text("event_id").notNull().unique(), // Stripe event ID (idempotency key)
+  eventType: text("event_type").notNull(),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+});
+
 // ============================================
 // Subscription Limits
 // ============================================
