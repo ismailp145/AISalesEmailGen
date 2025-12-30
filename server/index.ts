@@ -249,8 +249,18 @@ if (!isVercel) {
 }
 
 // Graceful shutdown handlers
-const gracefulShutdown = (signal: string) => {
+const gracefulShutdown = async (signal: string) => {
   console.log(`\n[Shutdown] Received ${signal}. Gracefully shutting down...`);
+  
+  // Close Redis client first if it exists
+  if (redisClient) {
+    try {
+      await redisClient.quit();
+      console.log("[Shutdown] Redis client disconnected successfully.");
+    } catch (err) {
+      console.error("[Shutdown] Error disconnecting Redis client:", err);
+    }
+  }
   
   httpServer.close((err) => {
     if (err) {
