@@ -145,8 +145,15 @@ function getBaseUrl(req: any): string {
     
     const allAllowedHosts = [...allowedHosts, ...corsOrigin];
     
-    if (allAllowedHosts.length > 0 && !allAllowedHosts.includes(host)) {
-      console.error(`[Security] OAuth redirect blocked for unauthorized host: ${host}`);
+    // Require at least one allowed host in production for security
+    if (allAllowedHosts.length === 0) {
+      console.error('[Security] CRITICAL: No allowed hosts configured for OAuth redirects in production. Set ALLOWED_HOSTS or CORS_ORIGIN environment variable.');
+      throw new Error('No allowed hosts configured for OAuth redirect. Please configure ALLOWED_HOSTS or CORS_ORIGIN.');
+    }
+    
+    // Validate host is in the allowed list
+    if (!allAllowedHosts.includes(host)) {
+      console.error(`[Security] OAuth redirect blocked for unauthorized host: ${host}. Allowed hosts: ${allAllowedHosts.join(', ')}`);
       throw new Error('Unauthorized host for OAuth redirect');
     }
   }
