@@ -15,7 +15,7 @@ export const requireAuthentication: RequestHandler = (req: Request, res: Respons
   const auth = getAuth(req);
   
   if (!auth.userId) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Unauthorized", message: "Userid not found" });
     return;
   }
   
