@@ -125,39 +125,33 @@ const sendEmailRequestSchema = z.object({
   provider: z.enum(["sendgrid", "gmail", "outlook"]).optional().default("sendgrid"),
 });
 
-// Helper to get the base URL for OAuth redirects with host validation
+// Helper to get the base URL for OAuth/Stripe redirects
+// For cross-origin deployments (Vercel frontend + Railway backend), 
+// we use FRONTEND_URL or CORS_ORIGIN as the redirect destination
 function getBaseUrl(req: any): string {
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
-  
-  // In production, validate against allowed hosts
+  // In production, use the frontend URL for redirects
   if (process.env.NODE_ENV === 'production') {
-    const allowedHosts = process.env.ALLOWED_HOSTS?.split(',').map(h => h.trim()) || [];
-    
-    // Always allow the configured CORS origins
-    const corsOrigin = process.env.CORS_ORIGIN?.split(',').map(o => {
-      try {
-        return new URL(o.trim()).host;
-      } catch {
-        return o.trim();
-      }
-    }) || [];
-    
-    const allAllowedHosts = [...allowedHosts, ...corsOrigin];
-    
-    // Require at least one allowed host in production for security
-    if (allAllowedHosts.length === 0) {
-      console.error('[Security] CRITICAL: No allowed hosts configured for OAuth redirects in production. Set ALLOWED_HOSTS or CORS_ORIGIN environment variable.');
-      throw new Error('No allowed hosts configured for OAuth redirect. Please configure ALLOWED_HOSTS or CORS_ORIGIN.');
+    // First priority: explicit FRONTEND_URL env var
+    if (process.env.FRONTEND_URL) {
+      console.log(`[Redirect] Using FRONTEND_URL: ${process.env.FRONTEND_URL}`);
+      return process.env.FRONTEND_URL.replace(/\/$/, ''); // Remove trailing slash
     }
     
-    // Validate host is in the allowed list
-    if (!allAllowedHosts.includes(host)) {
-      console.error(`[Security] OAuth redirect blocked for unauthorized host: ${host}. Allowed hosts: ${allAllowedHosts.join(', ')}`);
-      throw new Error('Unauthorized host for OAuth redirect');
+    // Second priority: first CORS_ORIGIN (frontend domain)
+    const corsOrigin = process.env.CORS_ORIGIN?.split(',')[0]?.trim();
+    if (corsOrigin) {
+      console.log(`[Redirect] Using CORS_ORIGIN: ${corsOrigin}`);
+      return corsOrigin.replace(/\/$/, ''); // Remove trailing slash
     }
+    
+    // Fallback: require at least one to be configured
+    console.error('[Security] CRITICAL: No FRONTEND_URL or CORS_ORIGIN configured for redirects in production.');
+    throw new Error('No frontend URL configured for redirects. Please set FRONTEND_URL or CORS_ORIGIN.');
   }
   
+  // In development, use the request host
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
   return `${protocol}://${host}`;
 }
 
