@@ -7,7 +7,7 @@ const secretKey = process.env.CLERK_SECRET_KEY;
 
 // Log Clerk configuration status on startup
 if (secretKey) {
-  console.log("[Clerk] Configured with secret key:", secretKey.substring(0, 10) + "...");
+  console.log("[Clerk] CLERK_SECRET_KEY is configured.");
 } else {
   console.warn("[Clerk] WARNING: No CLERK_SECRET_KEY found - authentication will not work");
 }
