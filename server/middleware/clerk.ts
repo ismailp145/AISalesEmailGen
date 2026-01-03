@@ -26,7 +26,7 @@ export const requireAuthentication: RequestHandler = (req: Request, res: Respons
   const hasCookies = !!req.headers.cookie;
   
   console.log(`[Auth Debug] ${req.method} ${req.path}`);
-  console.log(`[Auth Debug] Authorization header: ${authHeader ? 'present (' + authHeader.substring(0, 20) + '...)' : 'missing'}`);
+  console.log(`[Auth Debug] Authorization header: ${authHeader ? 'present' : 'missing'}`);
   console.log(`[Auth Debug] Cookies: ${hasCookies ? 'present' : 'missing'}`);
   console.log(`[Auth Debug] User ID from getAuth: ${auth.userId || 'null'}`);
   
