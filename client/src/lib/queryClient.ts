@@ -13,9 +13,26 @@ let getAuthToken: (() => Promise<string | null>) | null = null;
 /**
  * Set the auth token provider function. This should be called from a React
  * component that has access to Clerk's useAuth hook.
+ * 
+ * Returns a cleanup function that will clear the token provider when called.
+ * This is useful for React effects:
+ *   useEffect(() => {
+ *     const cleanup = setAuthTokenProvider(getToken);
+ *     return cleanup;
+ *   }, [getToken]);
  */
-export function setAuthTokenProvider(provider: () => Promise<string | null>) {
+export function setAuthTokenProvider(
+  provider: () => Promise<string | null>,
+): () => void {
   getAuthToken = provider;
+
+  // Return a cleanup function to avoid holding stale providers
+  return () => {
+    // Only clear if this provider is still the active one
+    if (getAuthToken === provider) {
+      getAuthToken = null;
+    }
+  };
 }
 
 /**

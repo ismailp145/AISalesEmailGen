@@ -14,19 +14,25 @@ export function AuthTokenProvider({ children }: { children: React.ReactNode }) {
   const { getToken, isLoaded } = useAuth();
 
   useEffect(() => {
-    if (isLoaded) {
-      // Set up the token provider for the queryClient
-      setAuthTokenProvider(async () => {
-        try {
-          // Get the session token from Clerk
-          const token = await getToken();
-          return token;
-        } catch (error) {
-          console.warn("[AuthTokenProvider] Failed to get token:", error);
-          return null;
-        }
-      });
+    if (!isLoaded) {
+      return;
     }
+
+    // Set up the token provider for the queryClient
+    const cleanup = setAuthTokenProvider(async () => {
+      try {
+        // Get the session token from Clerk
+        const token = await getToken();
+        return token;
+      } catch (error) {
+        console.warn("[AuthTokenProvider] Failed to get token:", error);
+        return null;
+      }
+    });
+
+    // Clean up the token provider when the component unmounts
+    // or when getToken changes to avoid holding stale references
+    return cleanup;
   }, [getToken, isLoaded]);
 
   return <>{children}</>;
