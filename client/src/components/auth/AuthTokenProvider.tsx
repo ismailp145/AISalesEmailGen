@@ -1,6 +1,28 @@
-import { useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { setAuthTokenProvider } from "@/lib/queryClient";
+
+/**
+ * Context to track whether auth is fully initialized and ready for API calls.
+ * This prevents race conditions where React Query fires requests before
+ * the Clerk token provider is set up.
+ */
+const AuthReadyContext = createContext<boolean>(false);
+
+/**
+ * Hook to check if authentication is ready for API calls.
+ * Use this to conditionally enable queries that require authentication.
+ * 
+ * @example
+ * const isAuthReady = useIsAuthReady();
+ * const { data } = useQuery({
+ *   queryKey: ["/api/subscription"],
+ *   enabled: isAuthReady,
+ * });
+ */
+export function useIsAuthReady() {
+  return useContext(AuthReadyContext);
+}
 
 /**
  * AuthTokenProvider hooks up Clerk's session token to the queryClient.
@@ -12,6 +34,7 @@ import { setAuthTokenProvider } from "@/lib/queryClient";
  */
 export function AuthTokenProvider({ children }: { children: React.ReactNode }) {
   const { getToken, isLoaded } = useAuth();
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
     if (!isLoaded) {
@@ -30,11 +53,23 @@ export function AuthTokenProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    // Mark auth as ready AFTER setting up the token provider
+    // This ensures queries won't fire until the provider is in place
+    setIsAuthReady(true);
+
     // Clean up the token provider when the component unmounts
-    // or when getToken changes to avoid holding stale references
+    // or when getToken changes to avoid holding stale references.
+    // Note: We intentionally don't set isAuthReady to false here because:
+    // - On dependency change: the new effect runs immediately and keeps auth ready
+    // - On unmount: the component tree is gone anyway
+    // Setting it to false would cause a brief disabled→enabled cycle on all
+    // queries when getToken changes (e.g., token refresh), triggering refetches.
     return cleanup;
   }, [getToken, isLoaded]);
 
-  return <>{children}</>;
+  return (
+    <AuthReadyContext.Provider value={isAuthReady}>
+      {children}
+    </AuthReadyContext.Provider>
+  );
 }
-

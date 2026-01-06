@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useIsAuthReady } from "@/components/auth/AuthTokenProvider";
 
 interface CrmConnection {
   id: number;
@@ -29,6 +30,7 @@ interface CrmConnectionsResponse {
 
 export default function IntegrationsPage() {
   const { toast } = useToast();
+  const isAuthReady = useIsAuthReady();
 
   // Handle OAuth success/error from URL params on mount
   // OAuth callbacks redirect from external providers, so this runs when the page loads
@@ -55,10 +57,12 @@ export default function IntegrationsPage() {
       });
       window.history.replaceState({}, "", "/integrations");
     }
-  }, [toast, queryClient]);
+  }, [toast]);
 
+  // Only fetch when auth is ready to avoid 401 race condition
   const { data, isLoading, refetch } = useQuery<CrmConnectionsResponse>({
     queryKey: ["/api/crm/connections"],
+    enabled: isAuthReady,
   });
 
   // HubSpot mutations

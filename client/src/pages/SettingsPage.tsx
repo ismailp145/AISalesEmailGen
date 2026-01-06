@@ -22,6 +22,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { userProfileSchema, type UserProfile, defaultUserProfile, SUBSCRIPTION_LIMITS } from "@shared/schema";
+import { useIsAuthReady } from "@/components/auth/AuthTokenProvider";
 
 // Subscription info type
 interface SubscriptionInfo {
@@ -46,13 +47,17 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const searchString = useSearch();
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
+  const isAuthReady = useIsAuthReady();
 
+  // Only fetch when auth is ready to avoid 401 race condition
   const { data: profile, isLoading } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
+    enabled: isAuthReady,
   });
 
   const { data: subscription, isLoading: isSubscriptionLoading } = useQuery<SubscriptionInfo>({
     queryKey: ["/api/subscription"],
+    enabled: isAuthReady,
   });
 
   // Handle subscription success/cancel URL parameters

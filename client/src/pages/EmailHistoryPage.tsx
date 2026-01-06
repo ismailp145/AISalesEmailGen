@@ -20,6 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDistanceToNow } from "date-fns";
+import { useIsAuthReady } from "@/components/auth/AuthTokenProvider";
 
 interface EmailActivity {
   id: number;
@@ -45,7 +46,9 @@ export default function EmailHistoryPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [expandedEmails, setExpandedEmails] = useState<Set<number>>(new Set());
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const isAuthReady = useIsAuthReady();
 
+  // Only fetch when auth is ready to avoid 401 race condition
   const { data: emails, isLoading, refetch } = useQuery<EmailActivity[]>({
     queryKey: ["/api/emails", statusFilter],
     queryFn: async () => {
@@ -56,6 +59,7 @@ export default function EmailHistoryPage() {
       if (!response.ok) throw new Error("Failed to fetch emails");
       return response.json();
     },
+    enabled: isAuthReady,
   });
 
   const updateStatusMutation = useMutation({
