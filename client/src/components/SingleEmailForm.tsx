@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, Sparkles, Copy, Send, RefreshCw, Check, Search, Newspaper, Linkedin, Building, TrendingUp, Briefcase, DollarSign, X, AlertTriangle, Crown, Clock } from "lucide-react";
+import { Loader2, Sparkles, Copy, Send, RefreshCw, Check, Search, Newspaper, Linkedin, Building, TrendingUp, Briefcase, DollarSign, X, AlertTriangle, Crown, Clock, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -312,6 +312,37 @@ export function SingleEmailForm() {
     form.handleSubmit(onSubmit)();
   };
 
+  const handleReset = () => {
+    // Reset form to default values
+    form.reset({
+      firstName: "",
+      lastName: "",
+      company: "",
+      title: "",
+      email: "",
+      linkedinUrl: "",
+      companyWebsite: "",
+      linkedinContent: "",
+      notes: "",
+      tone: "professional",
+      length: "medium",
+    });
+    // Clear generated email
+    setGeneratedEmail(null);
+    // Clear triggers
+    setTriggers([]);
+    setProspectSummary("");
+    setShowTriggers(false);
+    // Clear other UI state
+    setCopied(false);
+    setShowLinkedInContent(false);
+    // Show success message
+    toast({
+      title: "Form reset",
+      description: "All fields have been cleared. You can start fresh.",
+    });
+  };
+
   const isGenerating = generateMutation.isPending;
   const isDetecting = detectTriggersMutation.isPending;
   const selectedTriggerCount = triggers.filter(t => t.selected).length;
@@ -378,7 +409,19 @@ export function SingleEmailForm() {
 
       <Card className="border-border/50">
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg font-medium">Prospect Details</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg font-medium">Prospect Details</CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleReset}
+              disabled={isGenerating || isDetecting}
+              data-testid="button-reset"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Reset
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <Form {...form}>
