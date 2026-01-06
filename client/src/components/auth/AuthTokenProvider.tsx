@@ -58,11 +58,13 @@ export function AuthTokenProvider({ children }: { children: React.ReactNode }) {
     setIsAuthReady(true);
 
     // Clean up the token provider when the component unmounts
-    // or when getToken changes to avoid holding stale references
-    return () => {
-      cleanup();
-      setIsAuthReady(false);
-    };
+    // or when getToken changes to avoid holding stale references.
+    // Note: We intentionally don't set isAuthReady to false here because:
+    // - On dependency change: the new effect runs immediately and keeps auth ready
+    // - On unmount: the component tree is gone anyway
+    // Setting it to false would cause a brief disabled→enabled cycle on all
+    // queries when getToken changes (e.g., token refresh), triggering refetches.
+    return cleanup;
   }, [getToken, isLoaded]);
 
   return (

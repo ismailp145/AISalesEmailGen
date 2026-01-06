@@ -57,7 +57,7 @@ export default function IntegrationsPage() {
       });
       window.history.replaceState({}, "", "/integrations");
     }
-  }, [toast, queryClient]);
+  }, [toast]);
 
   // Only fetch when auth is ready to avoid 401 race condition
   const { data, isLoading, refetch } = useQuery<CrmConnectionsResponse>({
