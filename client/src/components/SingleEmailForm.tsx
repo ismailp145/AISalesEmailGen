@@ -53,14 +53,55 @@ import {
 } from "@/components/ui/tooltip";
 import { useIsAuthReady } from "@/components/auth/AuthTokenProvider";
 
+/**
+ * Normalizes a URL string by adding https:// if no protocol is present.
+ * This allows users to enter URLs without the protocol.
+ * Returns empty string if the input is empty or whitespace-only.
+ */
+function normalizeUrlInput(url: string | undefined): string {
+  if (!url || typeof url !== "string") {
+    return "";
+  }
+  
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return "";
+  }
+  
+  // Add https:// if no protocol is present
+  if (!trimmed.match(/^https?:\/\//i)) {
+    return `https://${trimmed}`;
+  }
+  
+  return trimmed;
+}
+
+/**
+ * Zod schema for optional URLs that auto-normalizes the input.
+ * Accepts URLs with or without https:// prefix.
+ * Empty strings are treated as undefined/optional.
+ */
+const optionalUrlSchema = z
+  .string()
+  .optional()
+  .default("")
+  .transform(normalizeUrlInput)
+  .pipe(
+    z.union([
+      z.literal(""),
+      z.string().url("Invalid URL")
+    ])
+  )
+  .transform(val => val || "");
+
 const formSchema = z.object({
   firstName: z.string().min(1, "Required"),
   lastName: z.string().min(1, "Required"),
   company: z.string().min(1, "Required"),
   title: z.string().min(1, "Required"),
   email: z.string().email("Invalid email"),
-  linkedinUrl: z.string().url("Invalid URL").optional().or(z.literal("")),
-  companyWebsite: z.string().url("Invalid URL").optional().or(z.literal("")),
+  linkedinUrl: optionalUrlSchema,
+  companyWebsite: optionalUrlSchema,
   linkedinContent: z.string().optional(),
   notes: z.string().optional(),
   tone: z.enum(["casual", "professional", "hyper-personal"]),
