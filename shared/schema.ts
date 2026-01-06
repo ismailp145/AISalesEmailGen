@@ -11,8 +11,10 @@ import { relations } from "drizzle-orm";
  * Normalizes a URL string by adding https:// if no protocol is present.
  * This allows users to enter URLs without the protocol.
  * Returns empty string if the input is empty or whitespace-only.
+ * 
+ * @export For use in frontend forms and server validation
  */
-function normalizeUrlInput(url: string | undefined): string {
+export function normalizeUrlInput(url: string | undefined): string {
   if (!url || typeof url !== "string") {
     return "";
   }
@@ -34,8 +36,10 @@ function normalizeUrlInput(url: string | undefined): string {
  * Zod schema for optional URLs that auto-normalizes the input.
  * Accepts URLs with or without https:// prefix.
  * Empty strings are treated as undefined/optional.
+ * 
+ * @export For use in shared schemas
  */
-const optionalUrlSchema = z
+export const optionalUrlSchema = z
   .string()
   .optional()
   .default("")
@@ -47,16 +51,6 @@ const optionalUrlSchema = z
     ])
   )
   .transform(val => val || "");
-
-/**
- * Zod schema for required URLs that auto-normalizes the input.
- * Accepts URLs with or without https:// prefix.
- */
-const requiredUrlSchema = z
-  .string()
-  .min(1, "URL is required")
-  .transform(normalizeUrlInput)
-  .pipe(z.string().url("Invalid URL"));
 
 // ============================================
 // Enums

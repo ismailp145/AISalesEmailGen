@@ -26,6 +26,7 @@ import {
   updateSequenceRequestSchema,
   enrollProspectsRequestSchema,
   detectTriggersRequestSchema,
+  normalizeUrlInput,
   SUBSCRIPTION_LIMITS,
   type CrmProvider,
   type SequenceStatus,
@@ -832,15 +833,7 @@ export async function registerRoutes(
         companyWebsite: z
           .string()
           .min(1, "Company website is required")
-          .transform(url => {
-            const trimmed = url.trim();
-            if (!trimmed) return trimmed;
-            // Add https:// if no protocol is present
-            if (!trimmed.match(/^https?:\/\//i)) {
-              return `https://${trimmed}`;
-            }
-            return trimmed;
-          })
+          .transform(normalizeUrlInput)
           .pipe(z.string().url({
             message: "Please enter a valid website URL (e.g., example.com or www.example.com)"
           })),
