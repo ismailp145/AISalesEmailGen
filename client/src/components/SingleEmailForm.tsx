@@ -51,6 +51,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useIsAuthReady } from "@/components/auth/AuthTokenProvider";
 
 const formSchema = z.object({
   firstName: z.string().min(1, "Required"),
@@ -121,12 +122,14 @@ export function SingleEmailForm() {
   const [prospectSummary, setProspectSummary] = useState("");
   const [showTriggers, setShowTriggers] = useState(false);
   const { toast } = useToast();
+  const isAuthReady = useIsAuthReady();
 
   const [showLinkedInContent, setShowLinkedInContent] = useState(false);
   
-  // Fetch subscription info
+  // Fetch subscription info (only when auth is ready to avoid 401 race condition)
   const { data: subscription } = useQuery<SubscriptionInfo>({
     queryKey: ["/api/subscription"],
+    enabled: isAuthReady,
   });
 
   const form = useForm<FormData>({

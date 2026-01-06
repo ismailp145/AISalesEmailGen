@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useIsAuthReady } from "@/components/auth/AuthTokenProvider";
 import { Plus, Play, Pause, Trash2, Users, Mail, Clock, Calendar, MoreVertical, Edit, Archive } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import type { SequenceRecord, SequenceWithSteps, SequenceStepApi, ProspectRecord } from "@shared/schema";
@@ -175,6 +176,7 @@ function StepEditor({ steps, onChange }: StepEditorProps) {
 
 export default function SequencesPage() {
   const { toast } = useToast();
+  const isAuthReady = useIsAuthReady();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isEnrollDialogOpen, setIsEnrollDialogOpen] = useState(false);
@@ -199,14 +201,16 @@ export default function SequencesPage() {
     steps: [] as SequenceStepApi[],
   });
 
-  // Fetch sequences
+  // Fetch sequences (only when auth is ready to avoid 401 race condition)
   const { data: sequences = [], isLoading } = useQuery<SequenceRecord[]>({
     queryKey: ["/api/sequences"],
+    enabled: isAuthReady,
   });
 
-  // Fetch prospects for enrollment
+  // Fetch prospects for enrollment (only when auth is ready to avoid 401 race condition)
   const { data: prospects = [] } = useQuery<ProspectRecord[]>({
     queryKey: ["/api/prospects"],
+    enabled: isAuthReady,
   });
 
   // Create sequence mutation

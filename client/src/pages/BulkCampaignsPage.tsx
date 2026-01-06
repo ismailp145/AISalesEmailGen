@@ -25,6 +25,7 @@ import { ProspectTable, type Prospect } from "@/components/ProspectTable";
 import { EmailPreviewModal } from "@/components/EmailPreviewModal";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useIsAuthReady } from "@/components/auth/AuthTokenProvider";
 
 // Subscription info type
 interface SubscriptionInfo {
@@ -94,10 +95,12 @@ export default function BulkCampaignsPage() {
   const [tone, setTone] = useState<Tone>("professional");
   const [length, setLength] = useState<Length>("medium");
   const { toast } = useToast();
+  const isAuthReady = useIsAuthReady();
   
-  // Fetch subscription info
+  // Fetch subscription info (only when auth is ready to avoid 401 race condition)
   const { data: subscription } = useQuery<SubscriptionInfo>({
     queryKey: ["/api/subscription"],
+    enabled: isAuthReady,
   });
 
   const handleFileSelect = useCallback(async (file: File) => {
