@@ -3,6 +3,8 @@ import { generateText } from "ai";
 import type { Prospect, GeneratedEmail, UserProfile, DetectedTrigger, DetectTriggersResponse } from "@shared/schema";
 import { storage } from "./storage";
 import { nanoid } from "nanoid";
+import pLimit from "p-limit";
+import pRetry, { AbortError } from "p-retry";
 
 // Configure OpenRouter as the provider using Vercel AI SDK
 const openrouter = createOpenAI({
@@ -231,8 +233,6 @@ export async function generateEmail(options: Omit<EmailGenerationOptions, 'profi
 }
 
 // Batch processing with rate limiting
-import pLimit from "p-limit";
-import pRetry, { AbortError } from "p-retry";
 
 function isRateLimitError(error: any): boolean {
   const errorMsg = error?.message || String(error);
