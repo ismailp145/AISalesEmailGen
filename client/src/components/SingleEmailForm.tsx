@@ -314,19 +314,7 @@ export function SingleEmailForm() {
 
   const handleReset = () => {
     // Reset form to default values
-    form.reset({
-      firstName: "",
-      lastName: "",
-      company: "",
-      title: "",
-      email: "",
-      linkedinUrl: "",
-      companyWebsite: "",
-      linkedinContent: "",
-      notes: "",
-      tone: "professional",
-      length: "medium",
-    });
+    form.reset();
     // Clear generated email
     setGeneratedEmail(null);
     // Clear triggers
