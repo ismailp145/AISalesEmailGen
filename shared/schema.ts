@@ -25,7 +25,7 @@ export function normalizeUrlInput(url: string | undefined): string {
   }
   
   // Add https:// if no protocol is present
-  if (!trimmed.match(/^https?:\/\//i)) {
+  if (!/^https?:\/\//i.test(trimmed)) {
     return `https://${trimmed}`;
   }
   
@@ -35,13 +35,12 @@ export function normalizeUrlInput(url: string | undefined): string {
 /**
  * Zod schema for optional URLs that auto-normalizes the input.
  * Accepts URLs with or without https:// prefix.
- * Empty strings are treated as undefined/optional.
+ * Empty strings are allowed and treated as no URL provided.
  * 
  * @export For use in shared schemas
  */
 export const optionalUrlSchema = z
   .string()
-  .optional()
   .default("")
   .transform(normalizeUrlInput)
   .pipe(
@@ -49,8 +48,7 @@ export const optionalUrlSchema = z
       z.literal(""),
       z.string().url("Invalid URL")
     ])
-  )
-  .transform(val => val || "");
+  );
 
 // ============================================
 // Enums

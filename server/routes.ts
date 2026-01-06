@@ -157,6 +157,24 @@ function getBaseUrl(req: any): string {
 }
 
 /**
+ * Validates a URL for SSRF protection
+ * Throws an error if the URL is blocked (localhost, internal networks, etc.)
+ * @param url - The URL to validate
+ * @throws Error if the URL is blocked for security reasons
+ */
+function validateUrlSSRF(url: string): void {
+  if (!url) return;
+  
+  try {
+    normalizeUrl(url);
+  } catch (error) {
+    throw new Error(
+      error instanceof Error ? error.message : "The provided URL is not allowed for security reasons."
+    );
+  }
+}
+
+/**
  * Validates website content quality for profile extraction
  * Checks for minimum length, meaningful content indicators, and common error page patterns
  * @param content - The website content (markdown) to validate
@@ -407,7 +425,7 @@ export async function registerRoutes(
       // Additional SSRF security check if companyWebsite is provided
       if (companyWebsite) {
         try {
-          normalizeUrl(companyWebsite);
+          validateUrlSSRF(companyWebsite);
         } catch (error) {
           return res.status(400).json({
             error: "Invalid URL",
@@ -868,8 +886,7 @@ export async function registerRoutes(
 
       // Additional SSRF security check
       try {
-        // normalizeUrl from url-utils does additional SSRF validation
-        normalizeUrl(companyWebsite);
+        validateUrlSSRF(companyWebsite);
       } catch (error) {
         return res.status(400).json({
           error: "Invalid URL",
