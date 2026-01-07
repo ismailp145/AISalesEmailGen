@@ -26,6 +26,7 @@ import {
   updateSequenceRequestSchema,
   enrollProspectsRequestSchema,
   detectTriggersRequestSchema,
+  normalizeUrlInput,
   SUBSCRIPTION_LIMITS,
   type CrmProvider,
   type SequenceStatus,
@@ -153,6 +154,24 @@ function getBaseUrl(req: any): string {
   const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
   return `${protocol}://${host}`;
+}
+
+/**
+ * Validates a URL for SSRF protection
+ * Throws an error if the URL is blocked (localhost, internal networks, etc.)
+ * @param url - The URL to validate
+ * @throws Error if the URL is blocked for security reasons
+ */
+function validateUrlSSRF(url: string): void {
+  if (!url) return;
+  
+  try {
+    normalizeUrl(url);
+  } catch (error) {
+    throw new Error(
+      error instanceof Error ? error.message : "The provided URL is not allowed for security reasons."
+    );
+  }
 }
 
 /**
@@ -367,28 +386,8 @@ export async function registerRoutes(
         });
       }
 
-      // Normalize companyWebsite if provided
-      const rawCompanyWebsite = req.body?.companyWebsite;
-      let normalizedWebsite: string | undefined;
-      
-      if (rawCompanyWebsite && rawCompanyWebsite.trim()) {
-        try {
-          normalizedWebsite = normalizeUrl(rawCompanyWebsite);
-        } catch (error) {
-          return res.status(400).json({
-            error: "Invalid URL",
-            message: error instanceof Error ? error.message : "The provided URL is not allowed for security reasons.",
-          });
-        }
-      } else {
-        normalizedWebsite = rawCompanyWebsite;
-      }
-
-      // Validate with normalized URL
-      const parsed = detectTriggersRequestSchema.safeParse({
-        ...req.body,
-        companyWebsite: normalizedWebsite,
-      });
+      // Validate request body - schema will auto-normalize URLs
+      const parsed = detectTriggersRequestSchema.safeParse(req.body);
       
       if (!parsed.success) {
         const errors = parsed.error.flatten().fieldErrors;
@@ -422,6 +421,18 @@ export async function registerRoutes(
       }
 
       const { prospect, companyWebsite } = parsed.data;
+
+      // Additional SSRF security check if companyWebsite is provided
+      if (companyWebsite) {
+        try {
+          validateUrlSSRF(companyWebsite);
+        } catch (error) {
+          return res.status(400).json({
+            error: "Invalid URL",
+            message: error instanceof Error ? error.message : "The provided URL is not allowed for security reasons.",
+          });
+        }
+      }
       
       // Prepare company data for trigger detection
       let companyData: {
@@ -835,29 +846,21 @@ export async function registerRoutes(
       const rawCompanyWebsite = req.body?.companyWebsite;
       const rawCompanyName = req.body?.companyName;
 
-      // Normalize the URL before validation
-      let normalizedWebsite = "";
-      if (rawCompanyWebsite) {
-        try {
-          normalizedWebsite = normalizeUrl(rawCompanyWebsite);
-        } catch (error) {
-          return res.status(400).json({
-            error: "Invalid URL",
-            message: error instanceof Error ? error.message : "The provided URL is not allowed for security reasons.",
-          });
-        }
-      }
-
+      // Create schema with URL normalization
       const schema = z.object({
-        companyWebsite: z.string().min(1, "Company website is required").url({
-          message: "Please enter a valid website URL (e.g., https://example.com or www.example.com)"
-        }),
+        companyWebsite: z
+          .string()
+          .min(1, "Company website is required")
+          .transform(normalizeUrlInput)
+          .pipe(z.string().url({
+            message: "Please enter a valid website URL (e.g., example.com or www.example.com)"
+          })),
         companyName: z.string().min(1, "Company name is required"),
       });
 
-      // Validate with normalized URL
+      // Validate and normalize
       const parsed = schema.safeParse({
-        companyWebsite: normalizedWebsite,
+        companyWebsite: rawCompanyWebsite,
         companyName: rawCompanyName,
       });
       
@@ -880,6 +883,16 @@ export async function registerRoutes(
       }
 
       const { companyWebsite, companyName } = parsed.data;
+
+      // Additional SSRF security check
+      try {
+        validateUrlSSRF(companyWebsite);
+      } catch (error) {
+        return res.status(400).json({
+          error: "Invalid URL",
+          message: error instanceof Error ? error.message : "The provided URL is not allowed for security reasons.",
+        });
+      }
 
       console.log("[API] Auto-filling profile from website:", companyWebsite);
 

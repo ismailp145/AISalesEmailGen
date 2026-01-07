@@ -197,7 +197,7 @@ async function scheduleStepEmail(
       company: prospectRecord.company,
       title: prospectRecord.title,
       email: prospectRecord.email,
-      linkedinUrl: prospectRecord.linkedinUrl || undefined,
+      linkedinUrl: prospectRecord.linkedinUrl || "",
       notes: prospectRecord.notes || undefined,
     };
 

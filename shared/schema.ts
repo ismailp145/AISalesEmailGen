@@ -4,6 +4,53 @@ import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 
 // ============================================
+// URL Normalization Helpers
+// ============================================
+
+/**
+ * Normalizes a URL string by adding https:// if no protocol is present.
+ * This allows users to enter URLs without the protocol.
+ * Returns empty string if the input is empty or whitespace-only.
+ * 
+ * @export For use in frontend forms and server validation
+ */
+export function normalizeUrlInput(url: string | undefined): string {
+  if (!url || typeof url !== "string") {
+    return "";
+  }
+  
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return "";
+  }
+  
+  // Add https:// if no protocol is present
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  
+  return trimmed;
+}
+
+/**
+ * Zod schema for optional URLs that auto-normalizes the input.
+ * Accepts URLs with or without https:// prefix.
+ * Empty strings are allowed and treated as no URL provided.
+ * 
+ * @export For use in shared schemas
+ */
+export const optionalUrlSchema = z
+  .string()
+  .default("")
+  .transform(normalizeUrlInput)
+  .pipe(
+    z.union([
+      z.literal(""),
+      z.string().url("Invalid URL")
+    ])
+  );
+
+// ============================================
 // Enums
 // ============================================
 
@@ -291,9 +338,9 @@ export const userProfileSchema = z.object({
   senderName: z.string().min(1, "Name is required"),
   senderTitle: z.string().optional().default(""),
   senderEmail: z.string().email("Invalid email").optional().or(z.literal("")).default(""),
-  calendarLink: z.string().url("Invalid URL").optional().or(z.literal("")).default(""),
+  calendarLink: optionalUrlSchema,
   companyName: z.string().min(1, "Company name is required"),
-  companyWebsite: z.string().url("Invalid URL").optional().or(z.literal("")).default(""),
+  companyWebsite: optionalUrlSchema,
   industry: z.string().optional().default(""),
   companyDescription: z.string().optional().default(""),
   productName: z.string().optional().default(""),
@@ -375,7 +422,7 @@ export const prospectSchema = z.object({
   company: z.string().min(1, "Company is required"),
   title: z.string().min(1, "Title is required"),
   email: z.string().email("Invalid email"),
-  linkedinUrl: z.string().url("Invalid URL").optional().or(z.literal("")),
+  linkedinUrl: optionalUrlSchema,
   notes: z.string().optional(),
 });
 
@@ -522,7 +569,7 @@ export interface DetectedTrigger {
 
 export const detectTriggersRequestSchema = z.object({
   prospect: prospectSchema,
-  companyWebsite: z.string().url("Invalid URL").optional().or(z.literal("")),
+  companyWebsite: optionalUrlSchema,
 });
 
 export type DetectTriggersRequest = z.infer<typeof detectTriggersRequestSchema>;

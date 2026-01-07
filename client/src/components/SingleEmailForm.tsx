@@ -45,6 +45,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { DetectedTrigger, TriggerType } from "@shared/schema";
+import { optionalUrlSchema } from "@shared/schema";
 import {
   Tooltip,
   TooltipContent,
@@ -59,8 +60,8 @@ const formSchema = z.object({
   company: z.string().min(1, "Required"),
   title: z.string().min(1, "Required"),
   email: z.string().email("Invalid email"),
-  linkedinUrl: z.string().url("Invalid URL").optional().or(z.literal("")),
-  companyWebsite: z.string().url("Invalid URL").optional().or(z.literal("")),
+  linkedinUrl: optionalUrlSchema,
+  companyWebsite: optionalUrlSchema,
   linkedinContent: z.string().optional(),
   notes: z.string().optional(),
   tone: z.enum(["casual", "professional", "hyper-personal"]),
