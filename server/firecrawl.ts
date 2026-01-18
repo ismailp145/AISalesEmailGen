@@ -83,21 +83,38 @@ export async function scrapeCompanyWebsite(url: string): Promise<CompanyWebsiteD
   }
 
   try {
-    // Try with proper SSL verification first
+    console.log("[Firecrawl] Scraping company website:", url);
+
     const scrapeResult = await firecrawl.scrape(url, {
       formats: ["markdown", "html"],
       onlyMainContent: true,
-      // skipTlsVerification: false by default
+      skipTlsVerification: true,
     });
-    
+
+    console.log("[Firecrawl] Successfully scraped website:", url);
     return processResult(scrapeResult, url);
+    
   } catch (error: any) {
-    // Only for SSL errors on untrusted sites, try HTTP fallback
+    // Check if this is an SSL error and the URL is HTTPS
     if (error?.message?.includes("SSL") && url.startsWith("https://")) {
-      console.warn(`[Firecrawl] SSL error for ${url}, attempting HTTP fallback`);
       const httpUrl = url.replace("https://", "http://");
-      return scrapeCompanyWebsite(httpUrl);
+      console.warn(`[Firecrawl] SSL error on ${url}, retrying with HTTP: ${httpUrl}`);
+      
+      try {
+        const scrapeResult = await firecrawl.scrape(httpUrl, {
+          formats: ["markdown", "html"],
+          onlyMainContent: true,
+        });
+
+        console.log("[Firecrawl] Successfully scraped website via HTTP:", httpUrl);
+        return processResult(scrapeResult, httpUrl);
+        
+      } catch (httpError: any) {
+        console.error(`[Firecrawl] HTTP fallback also failed for ${httpUrl}:`, httpError);
+        throw new Error(`Failed to scrape ${url} via HTTPS or HTTP: ${httpError.message}`, { cause: httpError });
+      }
     }
+    
     handleFirecrawlError(error, "scraping company website");
   }
 }
@@ -363,17 +380,35 @@ export async function crawlCompanyWebsite(url: string): Promise<string> {
   try {
     console.log("[Firecrawl] Crawling company website:", url);
 
-    // For now, use scrape instead of full crawl (crawl can be expensive)
-    // In production, you might want to use firecrawl.startCrawl for multi-page crawling
     const scrapeResult = await firecrawl.scrape(url, {
       formats: ["markdown"],
       onlyMainContent: true,
+      skipTlsVerification: true,
     });
 
     console.log("[Firecrawl] Successfully crawled website:", url);
 
     return scrapeResult.markdown || "";
   } catch (error: any) {
+    // SSL error fallback to HTTP
+    if (error?.message?.includes("SSL") && url.startsWith("https://")) {
+      const httpUrl = url.replace("https://", "http://");
+      console.warn(`[Firecrawl] SSL error on ${url}, retrying with HTTP: ${httpUrl}`);
+      
+      try {
+        const scrapeResult = await firecrawl.scrape(httpUrl, {
+          formats: ["markdown"],
+          onlyMainContent: true,
+        });
+
+        console.log("[Firecrawl] Successfully crawled website via HTTP:", httpUrl);
+        return scrapeResult.markdown || "";
+      } catch (httpError: any) {
+        console.error(`[Firecrawl] HTTP fallback also failed for ${httpUrl}:`, httpError);
+        throw new Error(`Failed to crawl ${url} via HTTPS or HTTP: ${httpError.message}`, { cause: httpError });
+      }
+    }
+    
     handleFirecrawlError(error, "crawling company website");
   }
 }
