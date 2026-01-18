@@ -31,6 +31,28 @@ initializeFirecrawl().catch(err => {
 export function isFirecrawlConfigured(): boolean {
   return !!firecrawl;
 }
+/**
+ * 
+ * @param scrapeResult - The result of the scrape
+ * @param url - The URL of the website
+ * @returns The processed result
+ */
+function processResult(scrapeResult: any, url: string): CompanyWebsiteData {
+  return {
+    url,
+    title: scrapeResult.metadata?.title || "",
+    description: scrapeResult.metadata?.description || "",
+    content: scrapeResult.markdown || scrapeResult.html || "",
+    metadata: {
+      keywords: scrapeResult.metadata?.keywords 
+        ? (typeof scrapeResult.metadata.keywords === 'string' 
+            ? scrapeResult.metadata.keywords.split(",").map((k: string) => k.trim()) 
+            : [])
+        : [],
+    },
+  };
+}
+
 
 // ============================================
 // Company Website Scraping
@@ -61,33 +83,25 @@ export async function scrapeCompanyWebsite(url: string): Promise<CompanyWebsiteD
   }
 
   try {
-    console.log("[Firecrawl] Scraping company website:", url);
-
-    // Scrape the website with markdown format
+    // Try with proper SSL verification first
     const scrapeResult = await firecrawl.scrape(url, {
       formats: ["markdown", "html"],
       onlyMainContent: true,
+      // skipTlsVerification: false by default
     });
-
-    console.log("[Firecrawl] Successfully scraped website:", url);
-
-    return {
-      url,
-      title: scrapeResult.metadata?.title || "",
-      description: scrapeResult.metadata?.description || "",
-      content: scrapeResult.markdown || scrapeResult.html || "",
-      metadata: {
-        keywords: scrapeResult.metadata?.keywords 
-          ? (typeof scrapeResult.metadata.keywords === 'string' 
-              ? scrapeResult.metadata.keywords.split(",").map((k: string) => k.trim()) 
-              : [])
-          : [],
-      },
-    };
+    
+    return processResult(scrapeResult, url);
   } catch (error: any) {
+    // Only for SSL errors on untrusted sites, try HTTP fallback
+    if (error?.message?.includes("SSL") && url.startsWith("https://")) {
+      console.warn(`[Firecrawl] SSL error for ${url}, attempting HTTP fallback`);
+      const httpUrl = url.replace("https://", "http://");
+      return scrapeCompanyWebsite(httpUrl);
+    }
     handleFirecrawlError(error, "scraping company website");
   }
 }
+
 
 // ============================================
 // Company News Search
